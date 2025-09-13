@@ -1,0 +1,34 @@
+package log
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/rs/zerolog"
+	"github.com/xuenqlve/timburr/internal/config"
+)
+
+var logger zerolog.Logger
+
+func Init() {
+	// log level
+	switch config.LogLevel {
+	case "debug":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "info":
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case "warn":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	default:
+		panic(fmt.Sprintf("unknown log level: %s", config.LogLevel))
+	}
+
+	// log file
+	consoleWriter := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "2006-01-02 15:04:05"}
+	fileWriter, err := os.OpenFile(config.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		panic(fmt.Sprintf("open log file failed: %s", err))
+	}
+	multi := zerolog.MultiLevelWriter(consoleWriter, fileWriter)
+	logger = zerolog.New(multi).With().Timestamp().Logger()
+}
