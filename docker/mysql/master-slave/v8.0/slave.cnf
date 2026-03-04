@@ -1,0 +1,34 @@
+[mysqld]
+# Server ID（必须唯一，不能与主节点相同）
+server-id = 2
+
+# Binlog 设置
+log-bin = mysql-bin
+binlog-format = ROW
+binlog-row-image = FULL
+
+# GTID 设置
+gtid-mode = ON
+enforce-gtid-consistency = ON
+
+# 只读设置
+read-only = 1
+super-read-only = 1
+
+# Relay Log 设置
+relay-log = relay-bin
+log-slave-updates = 1
+
+# 字符集
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+# 时区
+default-time-zone = '+08:00'
+
+# 从节点性能优化
+slave_parallel_workers = 4
+slave_parallel_type = LOGICAL_CLOCK
+
+[client]
+default-character-set = utf8mb4

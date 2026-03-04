@@ -1,0 +1,63 @@
+services:
+  mysql-master:
+    image: mysql:8.0
+    container_name: zygarde-mysql-master
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-app_db}
+      MYSQL_REPL_USER: ${MYSQL_REPL_USER:-repl}
+      MYSQL_REPL_PASSWORD: ${MYSQL_REPL_PASSWORD:-repl123}
+    ports:
+      - "${MYSQL_MASTER_PORT:-3306}:3306"
+    volumes:
+      - ./data/mysql-master:/var/lib/mysql
+      - ./logs/mysql-master:/var/log/mysql
+      - ./master.cnf:/etc/mysql/conf.d/master.cnf
+    command:
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql-slave:
+    image: mysql:8.0
+    container_name: zygarde-mysql-slave
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+    ports:
+      - "${MYSQL_SLAVE_PORT:-3307}:3306"
+    volumes:
+      - ./data/mysql-slave:/var/lib/mysql
+      - ./logs/mysql-slave:/var/log/mysql
+      - ./slave.cnf:/etc/mysql/conf.d/slave.cnf
+    depends_on:
+      - mysql-master
+    command:
+      --server-id=2
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --read-only=1
+      --super-read-only=1
+      --relay-log=relay-bin
+      --log-slave-updates=1
+      --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  default:
+    name: zygarde-network
