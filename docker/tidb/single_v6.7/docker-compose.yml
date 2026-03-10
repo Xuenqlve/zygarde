@@ -1,0 +1,53 @@
+services:
+  pd:
+    image: pingcap/pd:v6.5.12
+    container_name: zygarde-tidb-pd-single
+    restart: unless-stopped
+    command: [
+      "--name=pd",
+      "--data-dir=/data/pd",
+      "--client-urls=http://0.0.0.0:2379",
+      "--peer-urls=http://0.0.0.0:2380",
+      "--advertise-client-urls=http://pd:2379",
+      "--advertise-peer-urls=http://pd:2380",
+      "--initial-cluster=pd=http://pd:2380"
+    ]
+    ports:
+      - "${PD_PORT:-2379}:2379"
+    volumes:
+      - ./data/pd:/data/pd
+
+  tikv:
+    image: pingcap/tikv:v6.5.12
+    container_name: zygarde-tidb-tikv-single
+    restart: unless-stopped
+    depends_on:
+      - pd
+    command: [
+      "--pd=pd:2379",
+      "--addr=0.0.0.0:20160",
+      "--advertise-addr=tikv:20160",
+      "--data-dir=/data/tikv"
+    ]
+    ports:
+      - "${TIKV_PORT:-20160}:20160"
+    volumes:
+      - ./data/tikv:/data/tikv
+
+  tidb:
+    image: pingcap/tidb:v6.5.12
+    container_name: zygarde-tidb-single
+    restart: unless-stopped
+    depends_on:
+      - pd
+      - tikv
+    command: [
+      "--store=tikv",
+      "--path=pd:2379",
+      "--host=0.0.0.0",
+      "--status=10080",
+      "--advertise-address=tidb"
+    ]
+    ports:
+      - "${TIDB_PORT:-4000}:4000"
+      - "${TIDB_STATUS_PORT:-10080}:10080"

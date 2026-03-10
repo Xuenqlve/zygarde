@@ -1,0 +1,21 @@
+services:
+  redis:
+    image: redis:7.4
+    container_name: zygarde-redis-single
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - ./data/redis:/data
+    command:
+      - redis-server
+      - --appendonly
+      - yes
+      - --save
+      - "60 1000"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s

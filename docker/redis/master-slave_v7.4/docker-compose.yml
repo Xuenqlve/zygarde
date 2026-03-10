@@ -1,0 +1,48 @@
+services:
+  redis-master:
+    image: redis:7.4
+    container_name: zygarde-redis-master
+    restart: unless-stopped
+    ports:
+      - "${REDIS_MASTER_PORT:-6379}:6379"
+    volumes:
+      - ./data/redis-master:/data
+    command:
+      - redis-server
+      - --appendonly
+      - yes
+      - --save
+      - "60 1000"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  redis-slave:
+    image: redis:7.4
+    container_name: zygarde-redis-slave
+    restart: unless-stopped
+    ports:
+      - "${REDIS_SLAVE_PORT:-6380}:6379"
+    volumes:
+      - ./data/redis-slave:/data
+    command:
+      - redis-server
+      - --appendonly
+      - yes
+      - --save
+      - "60 1000"
+      - --replicaof
+      - redis-master
+      - "6379"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s

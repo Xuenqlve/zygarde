@@ -1,0 +1,54 @@
+services:
+  cfg1:
+    image: mongo:6.0
+    container_name: zygarde-mongo-cfg1
+    restart: unless-stopped
+    volumes:
+      - ./data/cfg1:/data/db
+    command: ["mongod", "--configsvr", "--replSet", "cfgRS", "--bind_ip_all", "--port", "27019"]
+
+  cfg2:
+    image: mongo:6.0
+    container_name: zygarde-mongo-cfg2
+    restart: unless-stopped
+    volumes:
+      - ./data/cfg2:/data/db
+    command: ["mongod", "--configsvr", "--replSet", "cfgRS", "--bind_ip_all", "--port", "27019"]
+
+  cfg3:
+    image: mongo:6.0
+    container_name: zygarde-mongo-cfg3
+    restart: unless-stopped
+    volumes:
+      - ./data/cfg3:/data/db
+    command: ["mongod", "--configsvr", "--replSet", "cfgRS", "--bind_ip_all", "--port", "27019"]
+
+  shard1:
+    image: mongo:6.0
+    container_name: zygarde-mongo-shard1
+    restart: unless-stopped
+    volumes:
+      - ./data/shard1:/data/db
+    command: ["mongod", "--shardsvr", "--replSet", "shardRS", "--bind_ip_all", "--port", "27018"]
+
+  shard2:
+    image: mongo:6.0
+    container_name: zygarde-mongo-shard2
+    restart: unless-stopped
+    volumes:
+      - ./data/shard2:/data/db
+    command: ["mongod", "--shardsvr", "--replSet", "shardRS", "--bind_ip_all", "--port", "27018"]
+
+  mongos:
+    image: mongo:6.0
+    container_name: zygarde-mongos
+    restart: unless-stopped
+    depends_on:
+      - cfg1
+      - cfg2
+      - cfg3
+      - shard1
+      - shard2
+    ports:
+      - "${MONGOS_PORT:-27017}:27017"
+    command: ["mongos", "--configdb", "cfgRS/cfg1:27019,cfg2:27019,cfg3:27019", "--bind_ip_all", "--port", "27017"]

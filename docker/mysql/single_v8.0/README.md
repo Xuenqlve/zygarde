@@ -33,3 +33,9 @@ docker compose down -v
 ## 场景
 
 单节点 MySQL（开启 binlog + GTID，方便后续升级为主从复制）
+
+## 稳定性说明
+
+- 验收统一走 `build.sh -> check.sh -> cleanup`。
+- 首次启动会初始化数据目录，验收结束后由 compose-stack 统一清理 `data/`。
+- 单机场景默认开启 binlog+GTID，确保后续切换主从时配置一致。

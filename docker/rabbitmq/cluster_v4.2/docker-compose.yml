@@ -1,0 +1,75 @@
+services:
+  rabbit1:
+    image: rabbitmq:4.2-management
+    container_name: zygarde-rabbitmq-1
+    hostname: rabbit1
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ1_AMQP_PORT:-5672}:5672"
+      - "${RABBITMQ1_MANAGEMENT_PORT:-15672}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-admin123}
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-rabbitmq-cookie}
+      RABBITMQ_NODENAME: rabbit@rabbit1
+    volumes:
+      - ./data/rabbit1:/var/lib/rabbitmq
+      - ./conf/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  rabbit2:
+    image: rabbitmq:4.2-management
+    container_name: zygarde-rabbitmq-2
+    hostname: rabbit2
+    restart: unless-stopped
+    depends_on:
+      rabbit1:
+        condition: service_healthy
+    ports:
+      - "${RABBITMQ2_AMQP_PORT:-5673}:5672"
+      - "${RABBITMQ2_MANAGEMENT_PORT:-15673}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-admin123}
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-rabbitmq-cookie}
+      RABBITMQ_NODENAME: rabbit@rabbit2
+    volumes:
+      - ./data/rabbit2:/var/lib/rabbitmq
+      - ./conf/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  rabbit3:
+    image: rabbitmq:4.2-management
+    container_name: zygarde-rabbitmq-3
+    hostname: rabbit3
+    restart: unless-stopped
+    depends_on:
+      rabbit1:
+        condition: service_healthy
+    ports:
+      - "${RABBITMQ3_AMQP_PORT:-5674}:5672"
+      - "${RABBITMQ3_MANAGEMENT_PORT:-15674}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-admin123}
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-rabbitmq-cookie}
+      RABBITMQ_NODENAME: rabbit@rabbit3
+    volumes:
+      - ./data/rabbit3:/var/lib/rabbitmq
+      - ./conf/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s

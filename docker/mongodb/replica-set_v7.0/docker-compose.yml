@@ -1,0 +1,30 @@
+services:
+  mongo-rs1:
+    image: mongo:7.0
+    container_name: zygarde-mongo-rs1
+    restart: unless-stopped
+    ports:
+      - "${MONGO_RS1_PORT:-27017}:27017"
+    volumes:
+      - ./data/mongo-rs1:/data/db
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--dbpath", "/data/db"]
+
+  mongo-rs2:
+    image: mongo:7.0
+    container_name: zygarde-mongo-rs2
+    restart: unless-stopped
+    ports:
+      - "${MONGO_RS2_PORT:-27018}:27017"
+    volumes:
+      - ./data/mongo-rs2:/data/db
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--dbpath", "/data/db"]
+
+  mongo-rs3:
+    image: mongo:7.0
+    container_name: zygarde-mongo-rs3
+    restart: unless-stopped
+    ports:
+      - "${MONGO_RS3_PORT:-27019}:27017"
+    volumes:
+      - ./data/mongo-rs3:/data/db
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--dbpath", "/data/db"]

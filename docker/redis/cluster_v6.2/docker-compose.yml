@@ -1,0 +1,66 @@
+services:
+  redis-node-1:
+    image: redis:6.2
+    container_name: zygarde-redis-node-1
+    restart: unless-stopped
+    ports:
+      - "${REDIS_NODE_1_PORT:-7001}:7001"
+      - "${REDIS_NODE_1_BUS_PORT:-17001}:17001"
+    volumes:
+      - ./data/redis-node-1:/data
+    command:
+      - redis-server
+      - --port
+      - "7001"
+      - --cluster-enabled
+      - "yes"
+      - --cluster-config-file
+      - nodes.conf
+      - --cluster-node-timeout
+      - "5000"
+      - --appendonly
+      - "yes"
+
+  redis-node-2:
+    image: redis:6.2
+    container_name: zygarde-redis-node-2
+    restart: unless-stopped
+    ports:
+      - "${REDIS_NODE_2_PORT:-7002}:7002"
+      - "${REDIS_NODE_2_BUS_PORT:-17002}:17002"
+    volumes:
+      - ./data/redis-node-2:/data
+    command:
+      - redis-server
+      - --port
+      - "7002"
+      - --cluster-enabled
+      - "yes"
+      - --cluster-config-file
+      - nodes.conf
+      - --cluster-node-timeout
+      - "5000"
+      - --appendonly
+      - "yes"
+
+  redis-node-3:
+    image: redis:6.2
+    container_name: zygarde-redis-node-3
+    restart: unless-stopped
+    ports:
+      - "${REDIS_NODE_3_PORT:-7003}:7003"
+      - "${REDIS_NODE_3_BUS_PORT:-17003}:17003"
+    volumes:
+      - ./data/redis-node-3:/data
+    command:
+      - redis-server
+      - --port
+      - "7003"
+      - --cluster-enabled
+      - "yes"
+      - --cluster-config-file
+      - nodes.conf
+      - --cluster-node-timeout
+      - "5000"
+      - --appendonly
+      - "yes"
