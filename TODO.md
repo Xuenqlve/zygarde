@@ -1,122 +1,56 @@
-# Zygarde 项目开发 TODO 清单
+# zygarde TODO
 
-## 项目概述
-Zygarde 是一个现代化的模块化环境部署工具，致力于维护开发环境的"秩序"和"完整性"。目标是建立声明式、开发者友好的一键部署本地数据库环境的工具。
+## Phase 1（已完成）: compose-stack 技能化闭环
 
-## 核心模块架构
-- **Template Manager**: 模板管理器 - 管理"零件"（模板）
-- **Blueprint Manager**: 蓝图管理器 - 管理"设计图"（蓝图），将零件组装成产品
-- **Environment Manager**: 环境管理器 - 管理"生产线"和"产品实例"（环境）
-- **Deployment Engine**: 部署引擎 - "机械臂"，执行物理操作
-- **Coordinator**: 协调器 - "总工程师"，统一协调各组件
+目标：围绕中间件测试场景，形成统一的 **设计(generate) + 验收(verify/build/check) + 回收(cleanup/down -v)** 流程。
 
-## 开发计划
+### ✅ 已完成能力矩阵
 
-### 阶段一：核心模块实现
+- MySQL（single / cluster）
+- Redis（single / cluster）
+- MongoDB（single / cluster）
+- PostgreSQL（single / cluster）
+- RabbitMQ（single / cluster）
+- Kafka（single / cluster）
+- TiDB（single / cluster）
+- etcd（single / cluster）
+- Consul（single / cluster）
+- ClickHouse（single / cluster，v24/v25）
+- ZooKeeper（single / cluster，v3.8/v3.9）
+- Elasticsearch（single / cluster，v8.18/v8.19）
 
-#### 1. Template Manager 模块
-- [ ] **设计并实现Template Manager模块的核心数据结构** 🔄 *进行中*
-  - 定义Template数据结构
-  - 设计变量提取和验证机制
-  - 实现存储接口
-  
-- [ ] **实现Template的CRUD操作（创建、读取、更新、删除、列表）**
-  - 模板上传功能
-  - 模板查询和列表功能
-  - 模板更新和删除功能
-  
-- [ ] **实现Template解析和验证功能**
-  - 模板语法解析（如 `{{ .Port }}`）
-  - 变量定义提取
-  - 模板语法验证
+### ✅ 产出
 
-#### 2. Blueprint Manager 模块
-- [ ] **设计并实现Blueprint Manager模块**
-  - 定义Blueprint数据结构
-  - 设计模板组合机制
-  - 实现变量管理系统
-  
-- [ ] **实现Blueprint的CRUD操作和编排功能**
-  - 蓝图创建和管理
-  - 模板引用和变量赋值
-  - 蓝图验证功能
-  
-- [ ] **实现Blueprint渲染引擎（核心功能）**
-  - 模板获取和变量注入
-  - 生成完整的docker-compose.yaml
-  - 渲染结果验证
-
-#### 3. Environment Manager 模块
-- [ ] **设计并实现Environment Manager模块**
-  - 定义Environment数据结构
-  - 设计状态管理机制
-  - 实现元数据管理
-  
-- [ ] **实现环境状态管理和元数据管理**
-  - 环境状态跟踪（Creating, Running, Stopped, Error）
-  - 环境-蓝图关联管理
-  - 访问端点管理
-
-#### 4. Deployment Engine 模块
-- [ ] **设计并实现Deployment Engine模块**
-  - 定义部署命令接口
-  - 设计状态反馈机制
-  - 实现错误处理
-  
-- [ ] **实现Docker Compose命令执行和项目隔离**
-  - 执行 docker-compose 命令
-  - 项目隔离（-p 参数）
-  - 命令结果捕获
-
-### 阶段二：统一协调和接口
-
-#### 5. Coordinator 统一门面
-- [ ] **设计并实现Coordinator统一门面**
-  - 流程编排逻辑
-  - 错误处理和事务保证
-  - 组件间协调机制
-
-#### 6. 用户接口
-- [ ] **实现CLI接口**
-  - 命令行参数解析
-  - 用户交互界面
-  - 命令执行逻辑
-  
-- [ ] **实现Web API接口**
-  - RESTful API 设计
-  - HTTP 服务器实现
-  - API 文档
-
-### 阶段三：质量保证和文档
-
-#### 7. 测试和文档
-- [ ] **添加单元测试和集成测试**
-  - 单元测试覆盖
-  - 集成测试场景
-  - 性能测试
-  
-- [ ] **完善文档和使用示例**
-  - API 文档
-  - 使用指南
-  - 配置示例
-
-## 进度追踪
-
-### 已完成 ✅
-*暂无已完成项目*
-
-### 进行中 🔄
-- 设计并实现Template Manager模块的核心数据结构
-
-### 待开始 ⏳
-- 所有其他任务项
-
-## 注意事项
-- 每个模块需要充分考虑错误处理和状态管理
-- 确保代码的可测试性和可扩展性
-- 遵循Go语言最佳实践
-- 保持清晰的模块边界和接口设计
-- 为未来扩展到Kubernetes做好准备
+1. `skills/compose-stack` 下完成脚本实现与统一入口接线。
+2. 所有中间件均完成真实环境验收（含踩坑修复后复验）。
+3. README + SKILL 文档完成经验沉淀（版本/tag、端口冲突、容器名冲突、配置兼容、验收口径）。
 
 ---
-*最后更新时间: 2025-09-13*
+
+## Phase 2（进行中）: Golang 模板化编排引擎
+
+目标：根据用户需求，自动拼装多中间件模板，输出可直接运行的 `docker-compose.yaml`，快速构建临时测试环境。
+
+### 核心方向
+
+- 模板标准化：定义模板元数据、变量规范、依赖关系。
+- 蓝图（Blueprint）机制：支持多模板组合与变量注入。
+- 环境管理：创建、状态追踪、销毁、隔离运行。
+- 部署执行：统一执行 `up/down/start/stop` 并反馈状态。
+- 协调器（Facade）：对外提供统一 CLI/API 接口。
+
+### 近期优先场景
+
+1. `mysql + elasticsearch`（示例链路）
+2. `postgresql + kafka`
+3. `mongo + redis`
+
+### 下一步任务建议
+
+- [ ] 定义模板元数据 schema（name/version/vars/ports/depends_on）
+- [ ] 定义 Blueprint schema（templates + values + network/volume policy）
+- [ ] 实现 render 引擎（Go text/template + 变量校验）
+- [ ] 实现 compose 合并与冲突检测（端口/容器名/网络）
+- [ ] 实现 environment 状态机（Creating/Running/Stopped/Error）
+- [ ] 实现 `zygarde blueprint render` 与 `zygarde env up/down` 原型命令
+- [ ] 建立 e2e 用例：`mysql -> elasticsearch` 临时测试环境一键拉起
