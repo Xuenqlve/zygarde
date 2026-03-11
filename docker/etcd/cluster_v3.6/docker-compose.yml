@@ -1,0 +1,60 @@
+services:
+  etcd1:
+    image: quay.io/coreos/etcd:v3.6.0
+    container_name: zygarde-etcd-1
+    restart: unless-stopped
+    ports:
+      - "${ETCD1_CLIENT_PORT:-2379}:2379"
+    environment:
+      ALLOW_NONE_AUTHENTICATION: "yes"
+      ETCD_NAME: etcd1
+      ETCD_DATA_DIR: /etcd-data
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd1:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd1:2380
+      ETCD_INITIAL_CLUSTER: etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: zygarde-etcd-cluster
+    volumes:
+      - ./data/etcd1:/etcd-data
+
+  etcd2:
+    image: quay.io/coreos/etcd:v3.6.0
+    container_name: zygarde-etcd-2
+    restart: unless-stopped
+    ports:
+      - "${ETCD2_CLIENT_PORT:-2479}:2379"
+    environment:
+      ALLOW_NONE_AUTHENTICATION: "yes"
+      ETCD_NAME: etcd2
+      ETCD_DATA_DIR: /etcd-data
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd2:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd2:2380
+      ETCD_INITIAL_CLUSTER: etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: zygarde-etcd-cluster
+    volumes:
+      - ./data/etcd2:/etcd-data
+
+  etcd3:
+    image: quay.io/coreos/etcd:v3.6.0
+    container_name: zygarde-etcd-3
+    restart: unless-stopped
+    ports:
+      - "${ETCD3_CLIENT_PORT:-2579}:2379"
+    environment:
+      ALLOW_NONE_AUTHENTICATION: "yes"
+      ETCD_NAME: etcd3
+      ETCD_DATA_DIR: /etcd-data
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd3:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd3:2380
+      ETCD_INITIAL_CLUSTER: etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: zygarde-etcd-cluster
+    volumes:
+      - ./data/etcd3:/etcd-data

@@ -89,6 +89,21 @@ do_generate() {
     tidb)
       "$SCRIPT_DIR/generate-tidb.sh" "$scenario" "$version"
       ;;
+    etcd)
+      "$SCRIPT_DIR/generate-etcd.sh" "$scenario" "$version"
+      ;;
+    consul)
+      "$SCRIPT_DIR/generate-consul.sh" "$scenario" "$version"
+      ;;
+    clickhouse)
+      "$SCRIPT_DIR/generate-clickhouse.sh" "$scenario" "$version"
+      ;;
+    zookeeper)
+      "$SCRIPT_DIR/generate-zookeeper.sh" "$scenario" "$version"
+      ;;
+    elasticsearch)
+      "$SCRIPT_DIR/generate-elasticsearch.sh" "$scenario" "$version"
+      ;;
     *)
       echo "[ERROR] 暂不支持的中间件: $middleware" >&2
       return 1

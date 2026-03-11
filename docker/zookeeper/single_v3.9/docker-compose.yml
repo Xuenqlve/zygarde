@@ -1,0 +1,15 @@
+services:
+  zk:
+    image: zookeeper:3.9
+    container_name: zygarde-zk-single
+    restart: unless-stopped
+    ports:
+      - "${ZK_CLIENT_PORT:-2181}:2181"
+      - "${ZK_FOLLOWER_PORT:-2888}:2888"
+      - "${ZK_ELECTION_PORT:-3888}:3888"
+    environment:
+      ZOO_MY_ID: 1
+      ZOO_4LW_COMMANDS_WHITELIST: ruok,mntr,srvr,stat,conf,isro
+    volumes:
+      - ./data/zk:/data
+      - ./datalog/zk:/datalog

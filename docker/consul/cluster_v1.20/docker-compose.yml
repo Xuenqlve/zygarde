@@ -1,0 +1,65 @@
+services:
+  consul1:
+    image: hashicorp/consul:1.20
+    container_name: zygarde-consul-1
+    restart: unless-stopped
+    command: [
+      "agent",
+      "-server",
+      "-ui",
+      "-node=consul1",
+      "-bootstrap-expect=3",
+      "-retry-join=consul1",
+      "-retry-join=consul2",
+      "-retry-join=consul3",
+      "-client=0.0.0.0",
+      "-bind=0.0.0.0",
+      "-data-dir=/consul/data"
+    ]
+    ports:
+      - "${CONSUL1_HTTP_PORT:-8500}:8500"
+      - "${CONSUL1_DNS_PORT:-8600}:8600/udp"
+    volumes:
+      - ./data/consul1:/consul/data
+
+  consul2:
+    image: hashicorp/consul:1.20
+    container_name: zygarde-consul-2
+    restart: unless-stopped
+    command: [
+      "agent",
+      "-server",
+      "-node=consul2",
+      "-bootstrap-expect=3",
+      "-retry-join=consul1",
+      "-retry-join=consul2",
+      "-retry-join=consul3",
+      "-client=0.0.0.0",
+      "-bind=0.0.0.0",
+      "-data-dir=/consul/data"
+    ]
+    ports:
+      - "${CONSUL2_HTTP_PORT:-9500}:8500"
+    volumes:
+      - ./data/consul2:/consul/data
+
+  consul3:
+    image: hashicorp/consul:1.20
+    container_name: zygarde-consul-3
+    restart: unless-stopped
+    command: [
+      "agent",
+      "-server",
+      "-node=consul3",
+      "-bootstrap-expect=3",
+      "-retry-join=consul1",
+      "-retry-join=consul2",
+      "-retry-join=consul3",
+      "-client=0.0.0.0",
+      "-bind=0.0.0.0",
+      "-data-dir=/consul/data"
+    ]
+    ports:
+      - "${CONSUL3_HTTP_PORT:-10500}:8500"
+    volumes:
+      - ./data/consul3:/consul/data

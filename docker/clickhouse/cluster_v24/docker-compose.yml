@@ -1,0 +1,33 @@
+services:
+  ch1:
+    image: clickhouse/clickhouse-server:24
+    container_name: zygarde-clickhouse-1
+    restart: unless-stopped
+    ports:
+      - "${CH1_HTTP_PORT:-8123}:8123"
+      - "${CH1_TCP_PORT:-9000}:9000"
+    volumes:
+      - ./data/ch1:/var/lib/clickhouse
+      - ./config/ch1/config.d/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+
+  ch2:
+    image: clickhouse/clickhouse-server:24
+    container_name: zygarde-clickhouse-2
+    restart: unless-stopped
+    ports:
+      - "${CH2_HTTP_PORT:-8124}:8123"
+      - "${CH2_TCP_PORT:-9001}:9000"
+    volumes:
+      - ./data/ch2:/var/lib/clickhouse
+      - ./config/ch2/config.d/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+
+  ch3:
+    image: clickhouse/clickhouse-server:24
+    container_name: zygarde-clickhouse-3
+    restart: unless-stopped
+    ports:
+      - "${CH3_HTTP_PORT:-8125}:8123"
+      - "${CH3_TCP_PORT:-9002}:9000"
+    volumes:
+      - ./data/ch3:/var/lib/clickhouse
+      - ./config/ch3/config.d/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro

@@ -15,13 +15,13 @@ usage() {
     echo "  mongodb       - MongoDB (single/replica-set/sharded), 版本必填: v6.0|v7.0"
     echo "  postgresql    - PostgreSQL (single/master-slave), 版本必填: v16|v17"
     echo "  tidb          - TiDB (single), 版本必填: v6.7"
-    echo "  elasticsearch - Elasticsearch"
+    echo "  elasticsearch - Elasticsearch (single/cluster), 版本必填: v8.18|v8.19"
     echo "  kafka         - Kafka"
     echo "  rabbitmq      - RabbitMQ (single/cluster), 版本必填: v4.2"
-    echo "  clickhouse    - ClickHouse"
-    echo "  etcd          - etcd"
-    echo "  zookeeper     - ZooKeeper"
-    echo "  consul        - Consul"
+    echo "  clickhouse    - ClickHouse (single/cluster), 版本必填: v24|v25"
+    echo "  etcd          - etcd (single/cluster), 版本必填: v3.6"
+    echo "  zookeeper     - ZooKeeper (single/cluster), 版本必填: v3.8|v3.9"
+    echo "  consul        - Consul (single/cluster), 版本必填: v1.20"
     echo ""
     echo "示例:"
     echo "  $0 mysql single v8.0"
@@ -33,6 +33,11 @@ usage() {
     echo "  $0 rabbitmq single v4.2"
     echo "  $0 rabbitmq cluster v4.2"
     echo "  $0 tidb single v6.7"
+    echo "  $0 etcd cluster v3.6"
+    echo "  $0 consul cluster v1.20"
+    echo "  $0 clickhouse cluster v25"
+    echo "  $0 zookeeper cluster v3.9"
+    echo "  $0 elasticsearch cluster v8.19"
 }
 
 if [ $# -lt 1 ]; then
@@ -95,7 +100,47 @@ case "$TYPE" in
         fi
         exec "$SCRIPT_DIR/generate-tidb.sh" "$SCENARIO" "$VERSION"
         ;;
-    elasticsearch|kafka|clickhouse|etcd|zookeeper|consul)
+    etcd)
+        if [ -z "$VERSION" ]; then
+            echo "错误: etcd 需要指定版本 (v3.6)"
+            usage
+            exit 1
+        fi
+        exec "$SCRIPT_DIR/generate-etcd.sh" "$SCENARIO" "$VERSION"
+        ;;
+    consul)
+        if [ -z "$VERSION" ]; then
+            echo "错误: Consul 需要指定版本 (v1.20)"
+            usage
+            exit 1
+        fi
+        exec "$SCRIPT_DIR/generate-consul.sh" "$SCENARIO" "$VERSION"
+        ;;
+    clickhouse)
+        if [ -z "$VERSION" ]; then
+            echo "错误: ClickHouse 需要指定版本 (v24|v25)"
+            usage
+            exit 1
+        fi
+        exec "$SCRIPT_DIR/generate-clickhouse.sh" "$SCENARIO" "$VERSION"
+        ;;
+    zookeeper)
+        if [ -z "$VERSION" ]; then
+            echo "错误: ZooKeeper 需要指定版本 (v3.8|v3.9)"
+            usage
+            exit 1
+        fi
+        exec "$SCRIPT_DIR/generate-zookeeper.sh" "$SCENARIO" "$VERSION"
+        ;;
+    elasticsearch)
+        if [ -z "$VERSION" ]; then
+            echo "错误: Elasticsearch 需要指定版本 (v8.18|v8.19)"
+            usage
+            exit 1
+        fi
+        exec "$SCRIPT_DIR/generate-elasticsearch.sh" "$SCENARIO" "$VERSION"
+        ;;
+    kafka)
         echo "该中间件脚本开发中..."
         exit 1
         ;;

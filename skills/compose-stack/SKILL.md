@@ -51,7 +51,12 @@
 - postgresql: single/master-slave (v16/v17)
 - rabbitmq: single/cluster(3节点) (v4.2)
 - kafka: single/cluster(KRaft 3节点) (v4.2)
-- tidb: single (v6.7)
+- tidb: single/cluster(3PD+3TiKV+2TiDB) (v6.7)
+- etcd: single/cluster(3节点) (v3.6)
+- consul: single/cluster(3节点) (v1.20)
+- clickhouse: single/cluster(3节点) (v24/v25)
+- zookeeper: single/cluster(3节点) (v3.8/v3.9)
+- elasticsearch: single/cluster(3节点) (v8.18/v8.19)
 
 ## Redis Cluster 兼容策略（重要）
 
@@ -158,3 +163,116 @@
 3. **cluster 校验需覆盖 quorum 与数据链路**
    - 先校验 `kafka-metadata-quorum --status`（LeaderId/CurrentVoters）。
    - 再做跨节点生产消费烟测，确保 broker 间复制链路可用。
+
+## etcd 验收经验与稳定性策略（新增）
+
+### 已验证矩阵
+
+- single: `v3.6` ✅
+- cluster(3节点): `v3.6` ✅
+
+### 关键经验
+
+1. **镜像策略需先确认 tag 可用性**
+   - `bitnami/etcd:3.6.0` 不可用时，已切换到 `quay.io/coreos/etcd:v3.6.0`。
+   - 若更换镜像源，建议先重新 generate，避免历史目录残留旧镜像配置。
+
+2. **single 验收建议固定 3 类信号**
+   - `endpoint health`（可用性）
+   - `member list`（成员状态）
+   - `KV put/get`（功能链路）
+
+3. **cluster 验收建议强校验成员与链路**
+   - 3 节点 `endpoint health` 全部通过。
+   - `member list` 数量至少 3。
+   - 跨节点 `put/get` 成功，确保复制链路可用。
+
+## Consul 验收经验与稳定性策略（新增）
+
+### 已验证矩阵
+
+- single: `v1.20` ✅
+- cluster(3节点): `v1.20` ✅
+
+### 关键经验
+
+1. **single 需要等待 leader 产生再判通过**
+   - API ready 不代表立即有 leader。
+   - `check.sh` 已增加 leader 重试窗口，避免瞬时空值误判。
+
+2. **cluster 建议使用 retry-join 自动收敛**
+   - 3 节点 server 模式，`retry-join=consul1/2/3`。
+   - 验收信号应同时包含 leader + members 收敛。
+
+3. **cluster 强校验口径**
+   - `leader` 非空
+   - `members >= 3`
+   - `raft peers = 3`
+   - 跨节点 `KV put/get` 成功
+
+## ClickHouse 验收经验与稳定性策略（新增）
+
+### 已验证矩阵
+
+- single: `v24` ✅ / `v25` ✅
+- cluster(3节点): `v24` ✅ / `v25` ✅
+
+### 关键经验
+
+1. **镜像 tag 需使用可用的主次版本**
+   - `clickhouse/clickhouse-server:25` 不存在。
+   - 已固定 `v25 -> 25.8`，避免拉取失败。
+
+2. **cluster 验收要同时看拓扑与跨节点链路**
+   - `system.clusters` 检查集群节点数。
+   - `remote('ch1,ch2,ch3', system.one)` 作为跨节点链路 smoke。
+
+3. **v25 默认用户网络限制会影响 remote()**
+   - 默认 `default` 用户仅本地可访问，跨节点会报认证失败。
+   - 已通过 `users.d/default-network.xml` 放开节点网络并复验通过。
+
+## ZooKeeper 验收经验与稳定性策略（新增）
+
+### 已验证矩阵
+
+- single: `v3.8` ✅ / `v3.9` ✅
+- cluster(3节点): `v3.8` ✅ / `v3.9` ✅
+
+### 关键经验
+
+1. **single 验收建议固定 3 类信号**
+   - `ruok=imok`（基础可用性）
+   - `mntr/stat`（状态可观测）
+   - znode create/get（功能链路）
+
+2. **cluster 验收需覆盖角色拓扑**
+   - 3 节点 `ruok` 全部通过。
+   - `stat` 输出必须能看到 leader/follower。
+   - 跨节点 znode 读写成功。
+
+3. **脏数据与日志干扰是两大稳定性风险**
+   - 启动前清理 `data/datalog`，避免 `No snapshot found`。
+   - `zkCli.sh` 结果解析需精确匹配数据行，避免日志尾行误判。
+
+## Elasticsearch 验收经验与稳定性策略（新增）
+
+### 已验证矩阵
+
+- single: `v8.18` ✅ / `v8.19` ✅
+- cluster(3节点): `v8.18` ✅ / `v8.19` ✅
+
+### 关键经验
+
+1. **脚本必须加载 .env 才能正确支持端口覆盖**
+   - 若 build/check 未加载 `.env`，会回退默认 920x 端口，导致误判或冲突。
+
+2. **本地端口冲突是高频问题**
+   - 9200/9201/9202 常被占用，验收时建议明确改用 9210+/9220+/9240+ 端口段。
+
+3. **容器命名冲突需要显式清理旧场景**
+   - single 与 cluster 使用固定容器名，切换场景前应先 `docker compose down -v`。
+
+4. **cluster 验收必须覆盖节点数量与数据链路**
+   - `number_of_nodes >= 3`
+   - `_cat/nodes` 正常
+   - 跨节点索引写入/读取 smoke 成功

@@ -1,0 +1,15 @@
+services:
+  es:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.18.0
+    container_name: zygarde-es-single
+    restart: unless-stopped
+    environment:
+      - node.name=es1
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "${ES_HTTP_PORT:-9200}:9200"
+      - "${ES_TRANSPORT_PORT:-9300}:9300"
+    volumes:
+      - ./data/es:/usr/share/elasticsearch/data

@@ -1,0 +1,48 @@
+services:
+  es1:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.18.0
+    container_name: zygarde-es-1
+    restart: unless-stopped
+    environment:
+      - node.name=es1
+      - cluster.name=zygarde-es
+      - discovery.seed_hosts=es1,es2,es3
+      - cluster.initial_master_nodes=es1,es2,es3
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "${ES1_HTTP_PORT:-9200}:9200"
+    volumes:
+      - ./data/es1:/usr/share/elasticsearch/data
+
+  es2:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.18.0
+    container_name: zygarde-es-2
+    restart: unless-stopped
+    environment:
+      - node.name=es2
+      - cluster.name=zygarde-es
+      - discovery.seed_hosts=es1,es2,es3
+      - cluster.initial_master_nodes=es1,es2,es3
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "${ES2_HTTP_PORT:-9201}:9200"
+    volumes:
+      - ./data/es2:/usr/share/elasticsearch/data
+
+  es3:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.18.0
+    container_name: zygarde-es-3
+    restart: unless-stopped
+    environment:
+      - node.name=es3
+      - cluster.name=zygarde-es
+      - discovery.seed_hosts=es1,es2,es3
+      - cluster.initial_master_nodes=es1,es2,es3
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "${ES3_HTTP_PORT:-9202}:9200"
+    volumes:
+      - ./data/es3:/usr/share/elasticsearch/data

@@ -1,0 +1,10 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24
+    container_name: zygarde-clickhouse-single
+    restart: unless-stopped
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_TCP_PORT:-9000}:9000"
+    volumes:
+      - ./data/clickhouse:/var/lib/clickhouse
