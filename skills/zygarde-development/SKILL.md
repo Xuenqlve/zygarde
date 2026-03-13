@@ -66,6 +66,11 @@ Zygarde 项目的统一开发 skill。
 
 在没有充分理由时，不要绕过 `coordinator` 直接从 CLI 调用 pkg，也不要让 `internal/*` 承担某个 middleware 的补默认值和校验细节。
 
+实现 `zygarde create` 时，第一步优先打通前半段链路：
+- `cmd/main.go -> internal/cli -> internal/app -> internal/coordinator`
+- `internal/coordinator` 再串联 `store -> blueprint -> template/pkg`
+- 在 render / deployment 尚未完成前，也要先让 `Create` 具备“读取 blueprint、归一化 services、调用 pkg Configure”的能力
+
 ## 实现约束
 
 - 新增代码前，先确定所属模块，再决定文件路径。

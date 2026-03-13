@@ -83,6 +83,25 @@
 13. `internal/environment` 持久化环境元数据、产物快照和状态。
 14. CLI 返回环境 ID、名称、路径和访问端点等结果。
 
+### create 前半段链路
+
+第一期优先打通 `main -> cli -> app -> coordinator -> store/blueprint/template` 这段链路。
+
+建议执行顺序：
+
+1. `cmd/main.go` 仅调用 `internal/cli` 入口，不承载业务逻辑。
+2. `internal/cli` 先支持 `zygarde create -f blueprint.yaml`，默认 runtime 为 Compose。
+3. `internal/cli` 将命令参数整理为标准 `CreateRequest`。
+4. `internal/app` 负责装配 blueprint store、middleware registry 和 coordinator。
+5. `internal/coordinator.Create` 负责读取 blueprint、归一化 services、解析 pkg 实现并逐个调用 `Configure(...)`。
+6. `internal/coordinator.Create` 前半段完成后，应能返回本次已参与配置的 middleware 实例集合，供后续 `BuildRuntimeContext()` 阶段继续使用。
+
+### create 命令建议
+
+- 一期最小命令：`zygarde create -f blueprint.yaml`
+- 一期默认 runtime：`compose`
+- 非必要时，不要在第一版引入过多 flags；优先把最小主链路打通
+
 ### 管理类主链路
 
 - `status`：读取 environment 元数据和当前状态，必要时结合 deployment 查询结果返回。

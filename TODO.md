@@ -74,6 +74,7 @@
 
 #### P0
 
+- [ ] 设计并打通 `zygarde create -f blueprint.yaml` 的前半段链路：`main -> cli -> app -> coordinator -> store/blueprint/template`
 - [ ] 定义一期最小闭环的核心模型，落在 `internal/model`
 - [ ] 定义平台默认配置与运行参数结构，落在 `internal/config`
 - [ ] 定义存储接口并实现本地文件存储，落在 `internal/store`
@@ -86,6 +87,17 @@
 - [ ] 实现 environment 生命周期和状态持久化
 - [ ] 实现 coordinator 的 `create`、`status`、`destroy`
 - [ ] 实现 CLI 入口并打通主链路
+
+### create 前半段 TODO
+
+- [ ] `cmd/main.go` 只保留 CLI 启动入口
+- [ ] `internal/cli` 增加 `create` 命令与 `-f/--file` 参数
+- [ ] `internal/cli` 定义 `CreateRequest`
+- [ ] `internal/app` 装配 create 所需依赖
+- [ ] `internal/store` 提供 `LoadBlueprint(path)` 能力
+- [ ] `internal/blueprint` 实现 service 默认补齐与唯一性校验
+- [ ] `internal/coordinator.Create` 完成 blueprint 读取、service 遍历和 pkg `Configure(...)` 调用
+- [ ] `internal/coordinator.Create` 输出后续 `BuildRuntimeContext()` 所需的中间结果
 
 #### P1
 
