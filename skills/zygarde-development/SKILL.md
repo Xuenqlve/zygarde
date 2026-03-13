@@ -90,4 +90,5 @@ Zygarde 项目的统一开发 skill。
 ## 参考资料
 
 - 目录与架构边界： [architecture.md](references/architecture.md)
+- pkg 实现规范： [pkg-middleware-guidelines.md](references/pkg-middleware-guidelines.md)
 - TODO 模板： [todo-template.md](references/todo-template.md)
