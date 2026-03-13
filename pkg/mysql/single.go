@@ -15,6 +15,12 @@ const (
 	defaultPort    = 3306
 )
 
+func init() {
+	if err := Register(runtime.EnvironmentTypeCompose); err != nil {
+		panic(err)
+	}
+}
+
 // Register registers MySQL specs into the provided registry.
 func Register(envType runtime.EnvironmentType) error {
 	return tpl.RegisterMiddleware(tpl.NewMiddlewareRuntimeKey(middlewareName, singleTemplate, envType), NewSingleSpec())

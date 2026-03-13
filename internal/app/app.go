@@ -2,17 +2,14 @@ package app
 
 import (
 	"context"
-	"sync"
+
+	_ "github.com/xuenqlve/zygarde/pkg/register"
 
 	"github.com/xuenqlve/zygarde/internal/config"
 	"github.com/xuenqlve/zygarde/internal/coordinator"
 	"github.com/xuenqlve/zygarde/internal/runtime"
 	"github.com/xuenqlve/zygarde/internal/store"
-	"github.com/xuenqlve/zygarde/pkg/mysql"
 )
-
-var registerOnce sync.Once
-var registerErr error
 
 // App wires the create flow dependencies together.
 type App struct {
@@ -22,13 +19,6 @@ type App struct {
 
 // New creates an application instance with the default local dependencies.
 func New() (*App, error) {
-	registerOnce.Do(func() {
-		registerErr = mysql.Register(runtime.EnvironmentTypeCompose)
-	})
-	if registerErr != nil {
-		return nil, registerErr
-	}
-
 	return &App{
 		cfg:         config.Default(),
 		coordinator: coordinator.New(store.NewFileBlueprintStore()),
