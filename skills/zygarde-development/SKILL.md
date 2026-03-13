@@ -46,6 +46,26 @@ Zygarde 项目的统一开发 skill。
 - 渲染逻辑与部署执行逻辑分离。
 - 领域模型、存储接口、流程编排三类职责保持解耦。
 
+## 主流程约束
+
+实现功能时，优先围绕项目主链路组织代码，而不是按临时需求分散落点。
+
+一期标准主流程如下：
+
+1. `internal/cli` 接收用户命令和参数。
+2. `internal/config` 读取并归一化运行配置。
+3. `internal/app` 完成依赖装配，并将请求交给 `internal/coordinator`。
+4. `internal/coordinator` 串联 `store`、`template`、`blueprint`、`render`、`runtime`、`deployment`、`environment` 完成一次完整操作。
+5. `internal/store` 负责读取和保存 template、blueprint、environment 等对象。
+6. `internal/template` 负责模板解析和变量校验。
+7. `internal/blueprint` 负责模板引用关系和变量绑定。
+8. `internal/render` 负责生成最终部署产物，例如 `docker-compose.yaml`。
+9. `internal/runtime` 负责准备工作目录、产物路径和项目隔离信息。
+10. `internal/deployment/compose` 负责执行 Docker Compose 部署动作。
+11. `internal/environment` 负责记录环境状态、元数据和生命周期结果。
+
+在没有充分理由时，不要绕过 `coordinator` 直接从 CLI 调用底层模块，也不要把部署状态写回逻辑散落到多个包中。
+
 ## 实现约束
 
 - 新增代码前，先确定所属模块，再决定文件路径。
