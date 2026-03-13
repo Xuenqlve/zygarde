@@ -10,19 +10,25 @@ import (
 )
 
 func NewMiddlewareKey(middleware, template string) MiddlewareKey {
-	return MiddlewareKey{
-		middleware: middleware,
-		template:   template,
-	}
+	return NewMiddlewareRuntimeKey(middleware, template, "")
 }
 
 type MiddlewareKey struct {
 	middleware string
 	template   string
+	runtime    runtime.EnvironmentType
+}
+
+func NewMiddlewareRuntimeKey(middleware, template string, envType runtime.EnvironmentType) MiddlewareKey {
+	return MiddlewareKey{
+		middleware: middleware,
+		template:   template,
+		runtime:    envType,
+	}
 }
 
 func (m MiddlewareKey) Key() string {
-	return m.middleware + "_" + m.template
+	return m.middleware + "_" + m.template + "_" + string(m.runtime)
 }
 
 func (m MiddlewareKey) Middleware() string {
@@ -31,6 +37,10 @@ func (m MiddlewareKey) Middleware() string {
 
 func (m MiddlewareKey) Template() string {
 	return m.template
+}
+
+func (m MiddlewareKey) EnvironmentType() runtime.EnvironmentType {
+	return m.runtime
 }
 
 var (
@@ -64,7 +74,7 @@ func RegisterMiddleware(key MiddlewareKey, m Middleware) error {
 	if _default_registry == nil {
 		_default_registry = make(map[string]Middleware)
 	}
-	if key.Middleware() == "" || key.Template() == "" {
+	if key.Middleware() == "" || key.Template() == "" || key.EnvironmentType() == "" {
 		return errors.New("middleware key requires middleware and template")
 	}
 	if key.Middleware() != m.Middleware() || key.Template() != m.Template() {
@@ -77,10 +87,11 @@ func RegisterMiddleware(key MiddlewareKey, m Middleware) error {
 	}
 
 	if m.IsDefault() {
-		if _, ok := _default_registry[key.Middleware()]; ok {
-			return errors.Errorf("default middleware already registered: %s", key.Middleware())
+		defaultKey := defaultRegistryKey(key.Middleware(), key.EnvironmentType())
+		if _, ok := _default_registry[defaultKey]; ok {
+			return errors.Errorf("default middleware already registered: %s", defaultKey)
 		}
-		_default_registry[key.Middleware()] = m
+		_default_registry[defaultKey] = m
 	}
 
 	_middleware_registry[key] = m
@@ -114,35 +125,35 @@ func GetMiddleware(key MiddlewareKey) (Middleware, error) {
 	return middleware, nil
 }
 
-func GetDefaultMiddleware(middleware string) (Middleware, error) {
+func GetDefaultMiddleware(middleware string, envType runtime.EnvironmentType) (Middleware, error) {
 	_middleware_mutex.Lock()
 	defer _middleware_mutex.Unlock()
 	if _default_registry == nil {
 		return nil, errors.New("no default middleware registry exists")
 	}
-	m, ok := _default_registry[middleware]
+	m, ok := _default_registry[defaultRegistryKey(middleware, envType)]
 	if !ok {
-		return nil, errors.Errorf("no default middleware:%s", middleware)
+		return nil, errors.Errorf("no default middleware:%s envType:%s", middleware, envType)
 	}
 	return m, nil
 }
 
-func ResolveMiddleware(input ServiceInput) (Middleware, error) {
+func ResolveMiddleware(input ServiceInput, envType runtime.EnvironmentType) (Middleware, error) {
 	if input.Middleware == "" {
 		return nil, errors.New("middleware is required")
 	}
 	if input.Template == "" {
-		return GetDefaultMiddleware(input.Middleware)
+		return GetDefaultMiddleware(input.Middleware, envType)
 	}
-	return GetMiddleware(NewMiddlewareKey(input.Middleware, input.Template))
+	return GetMiddleware(NewMiddlewareRuntimeKey(input.Middleware, input.Template, envType))
 }
 
-func NormalizeServices(inputs []ServiceInput) ([]model.BlueprintService, error) {
+func NormalizeServices(inputs []ServiceInput, envType runtime.EnvironmentType) ([]model.BlueprintService, error) {
 	services := make([]model.BlueprintService, 0, len(inputs))
 	seenNames := make(map[string]struct{}, len(inputs))
 
 	for i, input := range inputs {
-		middleware, err := ResolveMiddleware(input)
+		middleware, err := ResolveMiddleware(input, envType)
 		if err != nil {
 			return nil, err
 		}
@@ -162,6 +173,10 @@ func NormalizeServices(inputs []ServiceInput) ([]model.BlueprintService, error) 
 	}
 
 	return services, nil
+}
+
+func defaultRegistryKey(middleware string, envType runtime.EnvironmentType) string {
+	return middleware + "_" + string(envType)
 }
 
 func DefaultServiceName(middleware string, index int) string {

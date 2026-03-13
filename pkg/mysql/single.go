@@ -16,8 +16,8 @@ const (
 )
 
 // Register registers MySQL specs into the provided registry.
-func Register() error {
-	return tpl.RegisterMiddleware(tpl.NewMiddlewareKey(middlewareName, singleTemplate), NewSingleSpec())
+func Register(envType runtime.EnvironmentType) error {
+	return tpl.RegisterMiddleware(tpl.NewMiddlewareRuntimeKey(middlewareName, singleTemplate, envType), NewSingleSpec())
 }
 
 // NewSingleSpec returns the default MySQL single-node middleware spec.
