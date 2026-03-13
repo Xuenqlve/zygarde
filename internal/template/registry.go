@@ -1,65 +1,180 @@
 package template
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
 
-type specKey struct {
+	"github.com/xuenqlve/common/errors"
+	"github.com/xuenqlve/zygarde/internal/model"
+	"github.com/xuenqlve/zygarde/internal/runtime"
+)
+
+func NewMiddlewareKey(middleware, template string) MiddlewareKey {
+	return MiddlewareKey{
+		middleware: middleware,
+		template:   template,
+	}
+}
+
+type MiddlewareKey struct {
 	middleware string
 	template   string
 }
 
-// MemoryRegistry stores service specs in memory.
-type MemoryRegistry struct {
-	specs    map[specKey]ServiceSpec
-	defaults map[string]ServiceSpec
+func (m MiddlewareKey) Key() string {
+	return m.middleware + "_" + m.template
 }
 
-// NewRegistry creates an empty registry implementation.
-func NewRegistry() *MemoryRegistry {
-	return &MemoryRegistry{
-		specs:    make(map[specKey]ServiceSpec),
-		defaults: make(map[string]ServiceSpec),
-	}
+func (m MiddlewareKey) Middleware() string {
+	return m.middleware
 }
 
-// Register adds a service spec to the registry.
-func (r *MemoryRegistry) Register(spec ServiceSpec) error {
-	key := specKey{
-		middleware: spec.Middleware(),
-		template:   spec.Template(),
+func (m MiddlewareKey) Template() string {
+	return m.template
+}
+
+var (
+	_middleware_registry map[MiddlewareKey]Middleware
+	_default_registry    map[string]Middleware
+	_middleware_mutex    sync.Mutex
+)
+
+type Middleware interface {
+	Middleware() string
+	Template() string
+	IsDefault() bool
+	Configure(input ServiceInput, index int) (model.BlueprintService, error)
+	BuildRuntimeContext(service model.BlueprintService, runtimeType runtime.EnvironmentType) (runtime.EnvironmentContext, error)
+}
+
+type ServiceInput struct {
+	Name       string
+	Middleware string
+	Template   string
+	Values     map[string]any
+}
+
+func RegisterMiddleware(key MiddlewareKey, m Middleware) error {
+	_middleware_mutex.Lock()
+	defer _middleware_mutex.Unlock()
+
+	if _middleware_registry == nil {
+		_middleware_registry = make(map[MiddlewareKey]Middleware)
 	}
-	if _, exists := r.specs[key]; exists {
-		return fmt.Errorf("%w: %s/%s", ErrSpecAlreadyRegistered, key.middleware, key.template)
+	if _default_registry == nil {
+		_default_registry = make(map[string]Middleware)
 	}
-	r.specs[key] = spec
-	if spec.IsDefault() {
-		if _, exists := r.defaults[key.middleware]; exists {
-			return fmt.Errorf("%w: %s", ErrDefaultSpecAlreadyRegistered, key.middleware)
+	if key.Middleware() == "" || key.Template() == "" {
+		return errors.New("middleware key requires middleware and template")
+	}
+	if key.Middleware() != m.Middleware() || key.Template() != m.Template() {
+		return errors.Errorf("middleware key mismatch: key=%s/%s middleware=%s/%s", key.Middleware(), key.Template(), m.Middleware(), m.Template())
+	}
+
+	_, ok := _middleware_registry[key]
+	if ok {
+		return errors.Errorf("middleware already registered: %s", key.Key())
+	}
+
+	if m.IsDefault() {
+		if _, ok := _default_registry[key.Middleware()]; ok {
+			return errors.Errorf("default middleware already registered: %s", key.Middleware())
 		}
-		r.defaults[key.middleware] = spec
+		_default_registry[key.Middleware()] = m
 	}
+
+	_middleware_registry[key] = m
 	return nil
 }
 
-// Get returns a spec by middleware and template.
-func (r *MemoryRegistry) Get(middleware, template string) (ServiceSpec, bool) {
-	spec, ok := r.specs[specKey{
-		middleware: middleware,
-		template:   template,
-	}]
-	return spec, ok
-}
-
-// Default returns the default spec for one middleware.
-func (r *MemoryRegistry) Default(middleware string) (ServiceSpec, bool) {
-	spec, ok := r.defaults[middleware]
-	return spec, ok
-}
-
-// List returns all registered specs.
-func (r *MemoryRegistry) List() []ServiceSpec {
-	specs := make([]ServiceSpec, 0, len(r.specs))
-	for _, spec := range r.specs {
-		specs = append(specs, spec)
+func GetMiddlewareSet() (map[MiddlewareKey]Middleware, error) {
+	_middleware_mutex.Lock()
+	defer _middleware_mutex.Unlock()
+	if _middleware_registry == nil {
+		return nil, errors.New("no middleware registry exists")
 	}
-	return specs
+
+	out := make(map[MiddlewareKey]Middleware, len(_middleware_registry))
+	for key, middleware := range _middleware_registry {
+		out[key] = middleware
+	}
+	return out, nil
+}
+
+func GetMiddleware(key MiddlewareKey) (Middleware, error) {
+	_middleware_mutex.Lock()
+	defer _middleware_mutex.Unlock()
+	if _middleware_registry == nil {
+		return nil, errors.New("no middleware registry exists")
+	}
+	middleware, ok := _middleware_registry[key]
+	if !ok {
+		return nil, errors.Errorf("no middleware key:%s", key.Key())
+	}
+	return middleware, nil
+}
+
+func GetDefaultMiddleware(middleware string) (Middleware, error) {
+	_middleware_mutex.Lock()
+	defer _middleware_mutex.Unlock()
+	if _default_registry == nil {
+		return nil, errors.New("no default middleware registry exists")
+	}
+	m, ok := _default_registry[middleware]
+	if !ok {
+		return nil, errors.Errorf("no default middleware:%s", middleware)
+	}
+	return m, nil
+}
+
+func ResolveMiddleware(input ServiceInput) (Middleware, error) {
+	if input.Middleware == "" {
+		return nil, errors.New("middleware is required")
+	}
+	if input.Template == "" {
+		return GetDefaultMiddleware(input.Middleware)
+	}
+	return GetMiddleware(NewMiddlewareKey(input.Middleware, input.Template))
+}
+
+func NormalizeServices(inputs []ServiceInput) ([]model.BlueprintService, error) {
+	services := make([]model.BlueprintService, 0, len(inputs))
+	seenNames := make(map[string]struct{}, len(inputs))
+
+	for i, input := range inputs {
+		middleware, err := ResolveMiddleware(input)
+		if err != nil {
+			return nil, err
+		}
+
+		service, err := middleware.Configure(input, i+1)
+		if err != nil {
+			return nil, err
+		}
+		if service.Name == "" {
+			return nil, errors.New("service name is required")
+		}
+		if _, exists := seenNames[service.Name]; exists {
+			return nil, errors.Errorf("duplicate service name:%s", service.Name)
+		}
+		seenNames[service.Name] = struct{}{}
+		services = append(services, service)
+	}
+
+	return services, nil
+}
+
+func DefaultServiceName(middleware string, index int) string {
+	return fmt.Sprintf("%s-%d", middleware, index)
+}
+
+func MergeValues(defaults, overrides map[string]any) map[string]any {
+	merged := make(map[string]any, len(defaults)+len(overrides))
+	for key, value := range defaults {
+		merged[key] = value
+	}
+	for key, value := range overrides {
+		merged[key] = value
+	}
+	return merged
 }

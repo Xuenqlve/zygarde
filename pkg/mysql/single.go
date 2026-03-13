@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/xuenqlve/zygarde/internal/model"
+	"github.com/xuenqlve/zygarde/internal/runtime"
 	tpl "github.com/xuenqlve/zygarde/internal/template"
 )
 
@@ -15,12 +16,12 @@ const (
 )
 
 // Register registers MySQL specs into the provided registry.
-func Register(registry tpl.Registry) error {
-	return registry.Register(NewSingleSpec())
+func Register() error {
+	return tpl.RegisterMiddleware(tpl.NewMiddlewareKey(middlewareName, singleTemplate), NewSingleSpec())
 }
 
-// NewSingleSpec returns the default MySQL single-node service spec.
-func NewSingleSpec() tpl.ServiceSpec {
+// NewSingleSpec returns the default MySQL single-node middleware spec.
+func NewSingleSpec() tpl.Middleware {
 	return singleSpec{}
 }
 
@@ -36,13 +37,6 @@ func (singleSpec) Template() string {
 
 func (singleSpec) IsDefault() bool {
 	return true
-}
-
-func (singleSpec) DefaultValues() map[string]any {
-	return map[string]any{
-		"port":          defaultPort,
-		"root_password": "root",
-	}
 }
 
 func (s singleSpec) Normalize(input tpl.ServiceInput, index int) (model.BlueprintService, error) {
@@ -71,6 +65,31 @@ func (s singleSpec) Normalize(input tpl.ServiceInput, index int) (model.Blueprin
 		Middleware: s.Middleware(),
 		Template:   s.Template(),
 		Values:     values,
+	}, nil
+}
+
+func (s singleSpec) Configure(input tpl.ServiceInput, index int) (model.BlueprintService, error) {
+	service, err := s.Normalize(input, index)
+	if err != nil {
+		return model.BlueprintService{}, err
+	}
+	if err := s.Validate(service); err != nil {
+		return model.BlueprintService{}, err
+	}
+	return service, nil
+}
+
+func (s singleSpec) BuildRuntimeContext(service model.BlueprintService, runtimeType runtime.EnvironmentType) (runtime.EnvironmentContext, error) {
+	if err := s.Validate(service); err != nil {
+		return runtime.EnvironmentContext{}, err
+	}
+
+	return runtime.EnvironmentContext{
+		RuntimeType: runtimeType,
+		ServiceName: service.Name,
+		Middleware:  service.Middleware,
+		Template:    service.Template,
+		Values:      tpl.MergeValues(nil, service.Values),
 	}, nil
 }
 
@@ -120,6 +139,13 @@ func defaultStringValue(value any, fallback string) string {
 		return fallback
 	}
 	return current
+}
+
+func (singleSpec) DefaultValues() map[string]any {
+	return map[string]any{
+		"port":          defaultPort,
+		"root_password": "root",
+	}
 }
 
 func normalizePort(value any) (int, error) {
