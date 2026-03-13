@@ -53,24 +53,24 @@ Zygarde 项目的统一开发 skill。
 一期标准主流程如下：
 
 1. `internal/cli` 接收用户命令和参数。
-2. `internal/config` 读取并归一化运行配置。
-3. `internal/app` 完成依赖装配，并将请求交给 `internal/coordinator`。
-4. `internal/coordinator` 串联 `store`、`template`、`blueprint`、`render`、`runtime`、`deployment`、`environment` 完成一次完整操作。
-5. `internal/store` 负责读取和保存 template、blueprint、environment 等对象。
-6. `internal/template` 负责模板解析和变量校验。
-7. `internal/blueprint` 负责模板引用关系和变量绑定。
-8. `internal/render` 负责生成最终部署产物，例如 `docker-compose.yaml`。
-9. `internal/runtime` 负责准备工作目录、产物路径和项目隔离信息。
+2. `internal/config` 读取运行参数与平台默认配置。
+3. `internal/store` 读取 `blueprint.yaml`。
+4. `internal/blueprint` 整理 `services` 并补齐基础默认值。
+5. `internal/app` 完成依赖装配，并将请求交给 `internal/coordinator`。
+6. `internal/coordinator` 通过 `internal/template` 按 `middleware + template + environmentType` 解析 pkg 实现。
+7. `internal/coordinator` 按 `pipeline=service.name` 调用 pkg 的 `Configure(...)` 累计配置。
+8. pkg 在配置累计完成后统一返回 `[]EnvironmentContext`。
+9. `internal/runtime` / `internal/render` 根据 context 生成 runtime 产物；第一期为 Compose 产物。
 10. `internal/deployment/compose` 负责执行 Docker Compose 部署动作。
 11. `internal/environment` 负责记录环境状态、元数据和生命周期结果。
 
-在没有充分理由时，不要绕过 `coordinator` 直接从 CLI 调用底层模块，也不要把部署状态写回逻辑散落到多个包中。
+在没有充分理由时，不要绕过 `coordinator` 直接从 CLI 调用 pkg，也不要让 `internal/*` 承担某个 middleware 的补默认值和校验细节。
 
 ## 实现约束
 
 - 新增代码前，先确定所属模块，再决定文件路径。
-- 若一个能力未来会支持多个中间件或多个编排后端，应优先放在 `internal/` 的通用抽象中。
-- 若一个能力只服务于某一个中间件的运行细节，应放在对应 `pkg/<middleware>`。
+- 若一个能力只服务于某一个中间件或某个 runtime 下的中间件实现，应放在对应 `pkg/<middleware>`。
+- 若一个能力负责中间件注册、blueprint 归一化、runtime 产物拼装、部署执行等通用流程，应放在 `internal/`。
 - 新目录或新模块建立时，命名要与现有语义一致，避免临时名称。
 - 没有明确收益时，不提前引入复杂框架或过度抽象。
 

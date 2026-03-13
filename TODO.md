@@ -45,27 +45,28 @@
 - 场景先支持单一中间件的最简单拓扑。
 - 命令先支持 `create`、`status`、`destroy`。
 - 持久化先采用本地文件存储。
-- 目标是完成从 blueprint 定义到本地环境启动、查询、销毁的完整闭环。
+- 目标是完成从 blueprint 定义到 pkg 产出 compose context，再到本地环境启动、查询、销毁的完整闭环。
 
 ### 主流程
 
 1. `internal/cli` 接收用户命令和参数。
-2. `internal/config` 读取并归一化运行配置。
-3. `internal/app` 完成依赖装配，并将请求交给 `internal/coordinator`。
-4. `internal/coordinator` 串联 `store`、`template`、`blueprint`、`render`、`runtime`、`deployment`、`environment` 完成一次完整操作。
-5. `internal/store` 负责读取和保存 template、blueprint、environment 等对象。
-6. `internal/template` 负责模板解析和变量校验。
-7. `internal/blueprint` 负责模板引用关系和变量绑定。
-8. `internal/render` 负责生成最终部署产物，例如 `docker-compose.yaml`。
-9. `internal/runtime` 负责准备工作目录、产物路径和项目隔离信息。
-10. `internal/deployment/compose` 负责执行 Docker Compose 部署动作。
-11. `internal/environment` 负责记录环境状态、元数据和生命周期结果。
+2. `internal/config` 读取运行参数与平台默认配置。
+3. `internal/store` 读取 `blueprint.yaml`。
+4. `internal/blueprint` 整理 `services` 并补齐基础默认值。
+5. `internal/app` 完成依赖装配，并将请求交给 `internal/coordinator`。
+6. `internal/coordinator` 按 `middleware + template + environmentType` 从注册器中解析 pkg 实现。
+7. `internal/coordinator` 对每个 service 调用 pkg 的 `Configure(pipeline, config)`，其中 `pipeline=service.name`。
+8. 同一个 pkg 实现在一次环境创建中可以被多次 `Configure`，用于累计多个同类服务实例的配置。
+9. 所有 service 配置完成后，pkg 统一通过 `BuildRuntimeContext()` 输出 `[]EnvironmentContext`。
+10. `internal/runtime` / `internal/render` 消费所有 context，生成 Compose 产物。
+11. `internal/deployment/compose` 执行 Docker Compose 部署动作。
+12. `internal/environment` 负责记录环境状态、元数据和生命周期结果。
 
 ### 依赖顺序
 
 1. 基础层：`internal/model`、`internal/config`、`internal/log`
-2. 基础能力层：`internal/store`、`internal/runtime`、`internal/template`
-3. 领域组装层：`internal/blueprint`、`internal/render`、`pkg/<middleware>`
+2. 基础能力层：`internal/store`、`internal/template`、`internal/runtime`
+3. 领域组装层：`internal/blueprint`、`pkg/<middleware>`、`internal/render`
 4. 执行与状态层：`internal/deployment`、`internal/deployment/compose`、`internal/environment`
 5. 编排与入口层：`internal/coordinator`、`internal/app`、`internal/cli`、`cmd/main.go`
 
@@ -74,13 +75,13 @@
 #### P0
 
 - [ ] 定义一期最小闭环的核心模型，落在 `internal/model`
-- [ ] 定义全局配置结构，落在 `internal/config`
+- [ ] 定义平台默认配置与运行参数结构，落在 `internal/config`
 - [ ] 定义存储接口并实现本地文件存储，落在 `internal/store`
+- [ ] 定义 middleware 注册键和注册器能力，支持 `middleware + template + environmentType`
+- [ ] 实现 blueprint 基础能力，支持 service 默认补齐与唯一性校验
+- [ ] 实现 pkg 的 `Configure` / `BuildRuntimeContext` 主流程，先以 `mysql + single + compose` 跑通
 - [ ] 定义 runtime 目录布局与 project name 规则，落在 `internal/runtime`
-- [ ] 确定一期样板中间件，优先 `mysql` 或 `redis`
-- [ ] 实现 template 基础能力，支持模板读取和变量校验
-- [ ] 实现 blueprint 基础能力，支持模板引用和变量绑定
-- [ ] 实现 render 基础能力，生成 `docker-compose.yaml`
+- [ ] 实现 render/runtime 基础能力，消费 `[]EnvironmentContext` 生成 `docker-compose.yaml`
 - [ ] 定义 deployment 接口并实现 compose 后端
 - [ ] 实现 environment 生命周期和状态持久化
 - [ ] 实现 coordinator 的 `create`、`status`、`destroy`
@@ -88,15 +89,15 @@
 
 #### P1
 
-- [ ] 为一期样板中间件补齐默认值、变量规范和场景定义
+- [ ] 为一期样板中间件补齐多实例配置缓存与 compose context 生成
 - [ ] 增加 `start`、`stop`、`list`
 - [ ] 补充错误恢复和失败清理逻辑
 - [ ] 补充基础单元测试和主链路集成测试
 
 #### P2
 
-- [ ] 抽象第二个中间件，验证 `pkg/*` 与 `internal/*` 边界是否稳定
-- [ ] 为未来 K8s 后端预留 deployment 扩展点
+- [ ] 抽象第二个中间件，验证 `pkg/*` 作为唯一扩展点是否稳定
+- [ ] 为未来 K8s 后端补齐 runtime context 和 pkg 实现扩展点
 - [ ] 补充模板管理、蓝图管理的完整 CRUD
 
 ### 后续追加原则

@@ -64,36 +64,48 @@
 
 ## 主流程规划
 
-项目主流程按“定义 -> 渲染 -> 部署 -> 管理”组织。
+项目主流程按“定义 -> 配置累计 -> 上下文构建 -> 渲染 -> 部署 -> 管理”组织。
 
 ### 创建环境主链路
 
 1. 用户通过 CLI 发起环境创建请求。
 2. `internal/cli` 解析命令参数。
-3. `internal/config` 加载全局配置和运行参数。
-4. `internal/app` 装配依赖并调用 `internal/coordinator`。
-5. `internal/coordinator` 从 `internal/store` 读取 blueprint 和 template 定义。
-6. `internal/template` 解析模板并校验变量定义。
-7. `internal/blueprint` 整理模板引用关系和变量绑定结果。
-8. `internal/render` 生成最终 `docker-compose.yaml` 等部署产物。
-9. `internal/runtime` 为当前 environment 准备工作目录、产物路径和唯一项目名。
-10. `internal/deployment/compose` 执行 `docker compose up -d`。
-11. `internal/environment` 持久化环境元数据和状态。
-12. CLI 返回环境 ID、名称、路径和访问端点等结果。
+3. `internal/config` 加载全局默认配置和运行参数。
+4. `internal/store` 读取 `blueprint.yaml`。
+5. `internal/blueprint` 将 `services` 归一化，补齐默认 `name`、`template` 和空 `values`。
+6. `internal/app` 装配依赖并调用 `internal/coordinator`。
+7. `internal/coordinator` 按 `middleware + template + environmentType` 从 `internal/template` 注册器中解析 pkg 实现。
+8. `internal/coordinator` 对每个 service 调用 pkg 的 `Configure(pipeline, config)`。
+9. 同一个 pkg 实现按 `pipeline=service.name` 累计缓存多份服务配置。
+10. 所有 service 完成配置后，`internal/coordinator` 调用 pkg 的 `BuildRuntimeContext()`，统一拿到 `[]EnvironmentContext`。
+11. `internal/runtime` 和 `internal/render` 根据所有 context 生成当前 runtime 需要的产物；第一期为 `docker-compose.yaml`。
+12. `internal/deployment/compose` 执行 `docker compose up -d`。
+13. `internal/environment` 持久化环境元数据、产物快照和状态。
+14. CLI 返回环境 ID、名称、路径和访问端点等结果。
 
 ### 管理类主链路
 
 - `status`：读取 environment 元数据和当前状态，必要时结合 deployment 查询结果返回。
-- `start`：基于已有 runtime 目录和产物重新触发 deployment。
+- `start`：基于已持久化的 runtime 产物重新触发 deployment。
 - `stop`：调用 deployment 停止对应 environment。
 - `destroy`：调用 deployment 销毁环境，并由 environment 更新最终状态与清理结果。
 
 ### 模块协作原则
 
-- `pkg/<middleware>` 负责提供中间件特有能力，不直接驱动主流程。
-- `internal/template`、`internal/blueprint`、`internal/render` 共同负责“从定义到产物”。
+- `pkg/<middleware>` 是唯一中间件扩展点，负责配置补全、配置校验和 runtime context 生产。
+- `internal/template` 负责中间件注册与解析，不负责中间件细节实现。
+- `internal/blueprint` 负责用户 service 输入的整理与基础归一化。
+- `internal/runtime`、`internal/render` 负责消费 `[]EnvironmentContext` 并生成具体 runtime 产物。
 - `internal/environment`、`internal/deployment`、`internal/coordinator` 共同负责“从产物到运行态管理”。
 - `internal/store` 负责持久化边界，不承担业务编排。
+
+### 注册与扩展规则
+
+- pkg 注册键使用 `middleware + template + environmentType`。
+- 同一个 pkg 实现可以在一次环境创建中被多次 `Configure` 调用，用于累计多个同类服务实例的配置。
+- `pipeline` 统一使用 blueprint 中的 `service.name`，用于区分同一 middleware 的不同实例。
+- `BuildRuntimeContext()` 在一次配置累计完成后统一输出 `[]EnvironmentContext`。
+- 新增中间件或新增 runtime 时，应优先通过新增 pkg 实现接入，而不是修改主流程。
 
 ### 一期最小闭环
 
@@ -103,7 +115,7 @@
 - 场景先支持单一中间件的最简单拓扑。
 - 命令先支持 `create`、`status`、`destroy`。
 - 持久化先采用本地文件存储。
-- 目标是完成从 blueprint 定义到本地环境启动、查询、销毁的完整闭环。
+- 目标是完成从 blueprint 定义到 pkg 产出 compose context，再到本地环境启动、查询、销毁的完整闭环。
 
 ## 一期目标
 
