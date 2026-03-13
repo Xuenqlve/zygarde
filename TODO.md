@@ -74,12 +74,12 @@
 
 #### P0
 
-- [ ] 设计并打通 `zygarde create -f blueprint.yaml` 的前半段链路：`main -> cli -> app -> coordinator -> store/blueprint/template`
-- [ ] 定义一期最小闭环的核心模型，落在 `internal/model`
-- [ ] 定义平台默认配置与运行参数结构，落在 `internal/config`
-- [ ] 定义存储接口并实现本地文件存储，落在 `internal/store`
-- [ ] 定义 middleware 注册键和注册器能力，支持 `middleware + template + environmentType`
-- [ ] 实现 blueprint 基础能力，支持 service 默认补齐与唯一性校验
+- [x] 设计并打通 `zygarde create -f blueprint.yaml` 的前半段链路：`main -> cli -> app -> coordinator -> store/blueprint/template`
+- [x] 定义一期最小闭环的核心模型，落在 `internal/model`
+- [x] 定义平台默认配置与运行参数结构，落在 `internal/config`
+- [x] 定义存储接口并实现本地文件存储，落在 `internal/store`
+- [x] 定义 middleware 注册键和注册器能力，支持 `middleware + template + environmentType`
+- [x] 实现 blueprint 基础能力，支持 service 默认补齐与唯一性校验
 - [ ] 实现 pkg 的 `Configure` / `BuildRuntimeContext` 主流程，先以 `mysql + single + compose` 跑通
 - [ ] 定义 runtime 目录布局与 project name 规则，落在 `internal/runtime`
 - [ ] 实现 render/runtime 基础能力，消费 `[]EnvironmentContext` 生成 `docker-compose.yaml`
@@ -90,14 +90,22 @@
 
 ### create 前半段 TODO
 
-- [ ] `cmd/main.go` 只保留 CLI 启动入口
-- [ ] `internal/cli` 增加 `create` 命令与 `-f/--file` 参数
-- [ ] `internal/cli` 定义 `CreateRequest`
-- [ ] `internal/app` 装配 create 所需依赖
-- [ ] `internal/store` 提供 `LoadBlueprint(path)` 能力
-- [ ] `internal/blueprint` 实现 service 默认补齐与唯一性校验
-- [ ] `internal/coordinator.Create` 完成 blueprint 读取、service 遍历和 pkg `Configure(...)` 调用
-- [ ] `internal/coordinator.Create` 输出后续 `BuildRuntimeContext()` 所需的中间结果
+- [x] `cmd/main.go` 只保留 CLI 启动入口
+- [x] `internal/cli` 增加 `create` 命令与 `-f/--file` 参数
+- [x] `internal/cli` 定义 `CreateRequest`
+- [x] `internal/app` 装配 create 所需依赖
+- [x] `internal/store` 提供 `LoadBlueprint(path)` 能力
+- [x] `internal/blueprint` 实现 service 默认补齐与唯一性校验
+- [x] `internal/coordinator.Create` 完成 blueprint 读取、service 遍历和 pkg `Configure(...)` 调用
+- [x] `internal/coordinator.Create` 输出后续 `BuildRuntimeContext()` 所需的中间结果
+
+### 当前进度
+
+- [x] 单文件 `blueprint.yaml` 模型已确定，并已支持基础 YAML 读取
+- [x] `mysql + single + compose` 的样板 middleware 已接入注册器
+- [x] `create` 前半段骨架已可编译通过
+- [ ] `BuildRuntimeContext()` 的多实例累计与统一输出仍需按新设计继续收敛
+- [ ] runtime/render/deployment 的后半段主链路尚未接上
 
 #### P1
 
