@@ -1,18 +1,24 @@
 package model
 
-// Blueprint describes a deployable combination of template references.
+// Blueprint describes one user-facing environment definition file.
 type Blueprint struct {
 	Name        string
 	Version     string
 	Description string
-	Templates   []BlueprintTemplateRef
-	Metadata    map[string]string
+	Runtime     BlueprintRuntime
+	Services    []BlueprintService
 }
 
-// BlueprintTemplateRef binds a template and the values used for rendering it.
-type BlueprintTemplateRef struct {
-	TemplateName    string
-	TemplateVersion string
-	Alias           string
-	Values          map[string]string
+// BlueprintRuntime contains optional runtime overrides for one environment.
+type BlueprintRuntime struct {
+	ProjectName string
+	AutoRemove  bool
+}
+
+// BlueprintService describes one normalized middleware instance in a blueprint.
+type BlueprintService struct {
+	Name       string
+	Middleware string
+	Template   string
+	Values     map[string]any
 }
