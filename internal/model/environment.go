@@ -22,6 +22,7 @@ type Environment struct {
 	Name             string
 	BlueprintName    string
 	BlueprintVersion string
+	RuntimeType      string
 	Status           EnvironmentStatus
 	ProjectName      string
 	WorkspaceDir     string

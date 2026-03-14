@@ -43,7 +43,7 @@
 
 - 编排后端先只支持 Docker Compose。
 - 场景先支持单一中间件的最简单拓扑。
-- 命令先支持 `create`、`status`、`destroy`。
+- 命令先支持 `create`、`status`、`destroy`，并预留 `start`、`stop` 生命周期入口。
 - 持久化先采用本地文件存储。
 - 目标是完成从 blueprint 定义到 pkg 产出 compose context，再到本地环境启动、查询、销毁的完整闭环。
 
@@ -51,13 +51,13 @@
 
 1. `internal/cli` 接收用户命令和参数。
 2. `internal/config` 读取运行参数与平台默认配置。
-3. `internal/store` 读取 `blueprint.yaml`。
+3. `internal/store` 读取 `zygarde.yaml` 或显式指定的 blueprint 文件。
 4. `internal/blueprint` 整理 `services` 并补齐基础默认值。
 5. `internal/app` 完成依赖装配，并将请求交给 `internal/coordinator`。
 6. `internal/coordinator` 按 `middleware + template + environmentType` 从注册器中解析 pkg 实现。
-7. `internal/coordinator` 对每个 service 调用 pkg 的 `Configure(pipeline, config)`，其中 `pipeline=service.name`。
+7. `internal/coordinator` 对每个 service 调用 pkg 的 `Configure(...)`，按同一 middleware 实例累计多份配置。
 8. 同一个 pkg 实现在一次环境创建中可以被多次 `Configure`，用于累计多个同类服务实例的配置。
-9. 所有 service 配置完成后，pkg 统一通过 `BuildRuntimeContext()` 输出 `[]EnvironmentContext`。
+9. 所有 service 配置完成后，pkg 统一通过 `BuildRuntimeContexts()` 输出 `[]EnvironmentContext`。
 10. `internal/runtime` / `internal/render` 消费所有 context，生成 Compose 产物。
 11. `internal/deployment/compose` 执行 Docker Compose 部署动作。
 12. `internal/environment` 负责记录环境状态、元数据和生命周期结果。
@@ -74,19 +74,19 @@
 
 #### P0
 
-- [x] 设计并打通 `zygarde create -f blueprint.yaml` 的前半段链路：`main -> cli -> app -> coordinator -> store/blueprint/template`
+- [x] 设计并打通 `zygarde create -f zygarde.yaml` 的前半段链路：`main -> cli -> app -> coordinator -> store/blueprint/template`
 - [x] 定义一期最小闭环的核心模型，落在 `internal/model`
 - [x] 定义平台默认配置与运行参数结构，落在 `internal/config`
 - [x] 定义存储接口并实现本地文件存储，落在 `internal/store`
 - [x] 定义 middleware 注册键和注册器能力，支持 `middleware + template + environmentType`
 - [x] 实现 blueprint 基础能力，支持 service 默认补齐与唯一性校验
-- [ ] 实现 pkg 的 `Configure` / `BuildRuntimeContext` 主流程，先以 `mysql + single + compose` 跑通
-- [ ] 定义 runtime 目录布局与 project name 规则，落在 `internal/runtime`
-- [ ] 实现 render/runtime 基础能力，消费 `[]EnvironmentContext` 生成 `docker-compose.yaml`
-- [ ] 定义 deployment 接口并实现 compose 后端
-- [ ] 实现 environment 生命周期和状态持久化
-- [ ] 实现 coordinator 的 `create`、`status`、`destroy`
-- [ ] 实现 CLI 入口并打通主链路
+- [x] 实现 pkg 的 `Configure` / `BuildRuntimeContexts` 主流程，先以 `mysql + single + compose` 与 `mock + echo + compose` 跑通
+- [x] 定义 runtime 目录布局与 project name 规则，落在 `internal/runtime`
+- [x] 实现 runtime/render 基础能力，消费 `[]EnvironmentContext` 生成 `docker-compose.yaml`
+- [x] 定义 deployment 接口并实现 compose 后端骨架
+- [x] 实现 environment 生命周期和状态持久化骨架
+- [x] 实现 coordinator 的 `create`、`status`、`destroy`
+- [x] 实现 CLI 入口并打通主链路
 
 ### create 前半段 TODO
 
@@ -101,24 +101,40 @@
 
 ### 当前进度
 
-- [x] 单文件 `blueprint.yaml` 模型已确定，并已支持基础 YAML 读取
+- [x] 单文件 `zygarde.yaml` 模型已确定，并已支持基础 YAML 读取和默认文件发现
 - [x] `mysql + single + compose` 的样板 middleware 已接入注册器
-- [x] `create` 前半段骨架已可编译通过
-- [ ] `BuildRuntimeContext()` 的多实例累计与统一输出仍需按新设计继续收敛
-- [ ] runtime/render/deployment 的后半段主链路尚未接上
+- [x] `mock + echo + compose` 已接入注册器，可用于前半段链路调试
+- [x] `BuildRuntimeContexts()` 的多实例累计与统一输出已接入 `coordinator.Create`
+- [x] `create -> runtime prepare -> render -> compose apply -> environment save` 已形成可执行主链路
+- [x] `status`、`start`、`stop`、`destroy` CLI 已接入 `coordinator -> runtime driver -> compose executor`
+- [x] compose executor 已具备真实 `docker compose up/down/start/stop/ps -a` 执行能力
+- [x] compose executor 已补 fake runner 单测与基于 `docker/mysql/single_v5.7` 的真实 MySQL 集成测试
+- [ ] Compose renderer 当前仍为占位实现，尚未消费真实 middleware 语义生成可运行服务定义
+- [ ] `create` 主链路虽已完整接通，但对真实中间件模板的渲染仍需继续完善
 
 #### P1
 
-- [ ] 为一期样板中间件补齐多实例配置缓存与 compose context 生成
-- [ ] 增加 `start`、`stop`、`list`
+- [x] 为一期样板中间件补齐多实例配置缓存与 compose context 生成
+- [x] 增加 `start`、`stop`
+- [ ] 增加 `list`
 - [ ] 补充错误恢复和失败清理逻辑
-- [ ] 补充基础单元测试和主链路集成测试
+- [ ] 将 `start` 生命周期恢复路径补齐为稳定的真实集成测试
+- [ ] 补充更多基础单元测试和主链路集成测试
 
 #### P2
 
 - [ ] 抽象第二个中间件，验证 `pkg/*` 作为唯一扩展点是否稳定
 - [ ] 为未来 K8s 后端补齐 runtime context 和 pkg 实现扩展点
 - [ ] 补充模板管理、蓝图管理的完整 CRUD
+
+### 最近完成
+
+- [x] 定义并落地 runtime driver 统一抽象，覆盖 `Prepare / Render / Apply / Status / Start / Stop / Destroy / Cleanup`
+- [x] 新增 Compose runtime driver、renderer、deployment executor 与 environment file store
+- [x] 将 `CreateResult` / lifecycle result 收敛为面向 CLI 输出的用户提示文案
+- [x] 修复 compose executor 的相对路径问题，统一使用绝对 `workdir` / `compose file`
+- [x] 修复 `docker compose ps --format json` 在不同输出形态下的解析兼容性
+- [x] 修复 stop 后 `ps` 空结果导致误判 destroyed 的问题，统一使用 `docker compose ps -a --format json`
 
 ### 后续追加原则
 

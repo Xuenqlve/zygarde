@@ -1,0 +1,12 @@
+# github.com/pingcap/errors v0.11.5-0.20250523034308-74f78ae071ee
+## explicit; go 1.14
+github.com/pingcap/errors
+# github.com/xuenqlve/common v1.1.1
+## explicit; go 1.23.3
+github.com/xuenqlve/common/errors
+# go.uber.org/atomic v1.11.0
+## explicit; go 1.18
+go.uber.org/atomic
+# gopkg.in/yaml.v2 v2.2.2
+## explicit
+gopkg.in/yaml.v2

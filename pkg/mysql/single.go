@@ -28,24 +28,26 @@ func Register(envType runtime.EnvironmentType) error {
 
 // NewSingleSpec returns the default MySQL single-node middleware spec.
 func NewSingleSpec() tpl.Middleware {
-	return singleSpec{}
+	return &singleSpec{}
 }
 
-type singleSpec struct{}
+type singleSpec struct {
+	services []model.BlueprintService
+}
 
-func (singleSpec) Middleware() string {
+func (*singleSpec) Middleware() string {
 	return middlewareName
 }
 
-func (singleSpec) Template() string {
+func (*singleSpec) Template() string {
 	return singleTemplate
 }
 
-func (singleSpec) IsDefault() bool {
+func (*singleSpec) IsDefault() bool {
 	return true
 }
 
-func (s singleSpec) Normalize(input tpl.ServiceInput, index int) (model.BlueprintService, error) {
+func (s *singleSpec) Normalize(input tpl.ServiceInput, index int) (model.BlueprintService, error) {
 	name := input.Name
 	if name == "" {
 		name = tpl.DefaultServiceName(s.Middleware(), index)
@@ -74,7 +76,7 @@ func (s singleSpec) Normalize(input tpl.ServiceInput, index int) (model.Blueprin
 	}, nil
 }
 
-func (s singleSpec) Configure(input tpl.ServiceInput, index int) (model.BlueprintService, error) {
+func (s *singleSpec) Configure(input tpl.ServiceInput, index int) (model.BlueprintService, error) {
 	service, err := s.Normalize(input, index)
 	if err != nil {
 		return model.BlueprintService{}, err
@@ -82,24 +84,29 @@ func (s singleSpec) Configure(input tpl.ServiceInput, index int) (model.Blueprin
 	if err := s.Validate(service); err != nil {
 		return model.BlueprintService{}, err
 	}
+	s.services = append(s.services, service)
 	return service, nil
 }
 
-func (s singleSpec) BuildRuntimeContext(service model.BlueprintService, runtimeType runtime.EnvironmentType) (runtime.EnvironmentContext, error) {
-	if err := s.Validate(service); err != nil {
-		return runtime.EnvironmentContext{}, err
-	}
+func (s *singleSpec) BuildRuntimeContexts(runtimeType runtime.EnvironmentType) ([]runtime.EnvironmentContext, error) {
+	contexts := make([]runtime.EnvironmentContext, 0, len(s.services))
+	for _, service := range s.services {
+		if err := s.Validate(service); err != nil {
+			return nil, err
+		}
 
-	return runtime.EnvironmentContext{
-		RuntimeType: runtimeType,
-		ServiceName: service.Name,
-		Middleware:  service.Middleware,
-		Template:    service.Template,
-		Values:      tpl.MergeValues(nil, service.Values),
-	}, nil
+		contexts = append(contexts, runtime.EnvironmentContext{
+			RuntimeType: runtimeType,
+			ServiceName: service.Name,
+			Middleware:  service.Middleware,
+			Template:    service.Template,
+			Values:      tpl.MergeValues(nil, service.Values),
+		})
+	}
+	return contexts, nil
 }
 
-func (singleSpec) Validate(service model.BlueprintService) error {
+func (*singleSpec) Validate(service model.BlueprintService) error {
 	if service.Name == "" {
 		return tpl.ErrServiceNameRequired
 	}
@@ -147,7 +154,7 @@ func defaultStringValue(value any, fallback string) string {
 	return current
 }
 
-func (singleSpec) DefaultValues() map[string]any {
+func (*singleSpec) DefaultValues() map[string]any {
 	return map[string]any{
 		"port":          defaultPort,
 		"root_password": "root",

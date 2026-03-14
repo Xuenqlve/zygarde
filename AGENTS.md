@@ -17,3 +17,18 @@ Commits in this repository are short, lowercase summaries (e.g., "data source").
 
 ## Configuration Tips
 Command-line flags are parsed in `internal/config`; always document new flags and update sample configs. Avoid committing secrets—reference local `.env` paths instead—and prefer default-safe values that let `go run` succeed with minimal setup.
+
+## Project Skills
+This repository provides project-local skills under `./skills/`. Treat them as first-class skills for work in this project.
+
+### Available project-local skills
+- `zygarde-development`: `./skills/zygarde-development/SKILL.md`
+  Use for feature development, bug fixes, refactors, directory changes, and architecture evolution in this repository. It is mandatory when work touches `pkg/` middleware capabilities or `internal/` core modules.
+- `compose-stack`: `./skills/compose-stack/SKILL.md`
+  Use when generating Docker Compose-based middleware stacks, scripts, or related runtime assets from the repository templates.
+
+### Skill usage rules
+- If the user names one of the project-local skills, read the corresponding `SKILL.md` and follow it for that turn.
+- If a task clearly matches a project-local skill, use it even if the user did not mention it explicitly.
+- Prefer project-local skills over generic global skills when both could apply.
+- When a `SKILL.md` references relative paths, resolve them relative to that skill directory first.

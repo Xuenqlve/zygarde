@@ -54,7 +54,7 @@ type Middleware interface {
 	Template() string
 	IsDefault() bool
 	Configure(input ServiceInput, index int) (model.BlueprintService, error)
-	BuildRuntimeContext(service model.BlueprintService, runtimeType runtime.EnvironmentType) (runtime.EnvironmentContext, error)
+	BuildRuntimeContexts(runtimeType runtime.EnvironmentType) ([]runtime.EnvironmentContext, error)
 }
 
 type ServiceInput struct {

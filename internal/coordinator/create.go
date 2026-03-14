@@ -2,8 +2,11 @@ package coordinator
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/xuenqlve/zygarde/internal/blueprint"
+	"github.com/xuenqlve/zygarde/internal/environment"
 	"github.com/xuenqlve/zygarde/internal/model"
 	"github.com/xuenqlve/zygarde/internal/runtime"
 	"github.com/xuenqlve/zygarde/internal/store"
@@ -16,25 +19,24 @@ type CreateRequest struct {
 	EnvironmentType runtime.EnvironmentType
 }
 
-// CreateResult captures the create flow output before render/deploy.
-type CreateResult struct {
-	Blueprint       model.Blueprint
-	EnvironmentType runtime.EnvironmentType
-	Middlewares     []template.Middleware
-}
-
 // Coordinator orchestrates the create flow.
 type Coordinator struct {
-	blueprints store.BlueprintStore
+	blueprints    store.BlueprintStore
+	environments environment.Store
+	runtimes     runtime.Registry
 }
 
 // New creates a coordinator instance.
-func New(blueprints store.BlueprintStore) Coordinator {
-	return Coordinator{blueprints: blueprints}
+func New(blueprints store.BlueprintStore, environments environment.Store, runtimes runtime.Registry) Coordinator {
+	return Coordinator{
+		blueprints:    blueprints,
+		environments: environments,
+		runtimes:     runtimes,
+	}
 }
 
-// Create loads the blueprint, normalizes services, and calls middleware Configure.
-func (c Coordinator) Create(_ context.Context, req CreateRequest) (*CreateResult, error) {
+// Create loads the blueprint, normalizes services, renders runtime artifacts, and records the environment metadata.
+func (c Coordinator) Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
 	loaded, err := c.blueprints.LoadBlueprint(req.BlueprintFile)
 	if err != nil {
 		return nil, err
@@ -48,7 +50,7 @@ func (c Coordinator) Create(_ context.Context, req CreateRequest) (*CreateResult
 	middlewareSet := make(map[string]template.Middleware)
 	middlewares := make([]template.Middleware, 0, len(normalized.Services))
 
-	for _, service := range normalized.Services {
+	for index, service := range normalized.Services {
 		middleware, err := template.GetMiddleware(
 			template.NewMiddlewareRuntimeKey(service.Middleware, service.Template, req.EnvironmentType),
 		)
@@ -61,7 +63,7 @@ func (c Coordinator) Create(_ context.Context, req CreateRequest) (*CreateResult
 			Middleware: service.Middleware,
 			Template:   service.Template,
 			Values:     service.Values,
-		}, 0); err != nil {
+		}, index+1); err != nil {
 			return nil, err
 		}
 
@@ -72,9 +74,68 @@ func (c Coordinator) Create(_ context.Context, req CreateRequest) (*CreateResult
 		}
 	}
 
+	runtimeContexts := make([]runtime.EnvironmentContext, 0, len(normalized.Services))
+	for _, middleware := range middlewares {
+		contexts, err := middleware.BuildRuntimeContexts(req.EnvironmentType)
+		if err != nil {
+			return nil, err
+		}
+		runtimeContexts = append(runtimeContexts, contexts...)
+	}
+
+	driver, err := c.runtimes.Get(req.EnvironmentType)
+	if err != nil {
+		return nil, err
+	}
+
+	prepared, err := driver.Prepare(ctx, runtime.PrepareRequest{
+		Blueprint: normalized,
+		Contexts:  runtimeContexts,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	rendered, err := driver.Render(ctx, runtime.RenderRequest{
+		Prepared: *prepared,
+		Contexts: runtimeContexts,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	applied, err := driver.Apply(ctx, runtime.ApplyRequest{
+		Prepared: *prepared,
+		Rendered: *rendered,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	env := prepared.Environment
+	env.Status = runtimeStatusFromApplyResult(applied)
+	env.Endpoints = applied.Endpoints
+	env.UpdatedAt = time.Now()
+	if err := c.environments.Save(env); err != nil {
+		return nil, err
+	}
+
 	return &CreateResult{
-		Blueprint:       normalized,
-		EnvironmentType: req.EnvironmentType,
-		Middlewares:     middlewares,
+		Message: fmt.Sprintf(
+			"created environment %s for %s with %d service(s), %d runtime context(s), compose file %s, apply result: %s",
+			env.ID,
+			normalized.Name,
+			len(normalized.Services),
+			len(runtimeContexts),
+			rendered.PrimaryFile,
+			applied.Message,
+		),
 	}, nil
+}
+
+func runtimeStatusFromApplyResult(result *runtime.OperationResult) model.EnvironmentStatus {
+	if result != nil {
+		return model.EnvironmentStatusRunning
+	}
+	return model.EnvironmentStatusError
 }

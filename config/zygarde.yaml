@@ -1,0 +1,7 @@
+name: mock-demo
+version: "v1"
+description: Minimal blueprint for verifying the create preflight flow
+services:
+  - middleware: mock
+    values:
+      foo: bar
