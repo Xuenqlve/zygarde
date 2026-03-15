@@ -3,9 +3,11 @@ package mysql
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/xuenqlve/zygarde/internal/model"
 	"github.com/xuenqlve/zygarde/internal/runtime"
+	runtimecompose "github.com/xuenqlve/zygarde/internal/runtime/compose"
 	tpl "github.com/xuenqlve/zygarde/internal/template"
 )
 
@@ -13,6 +15,7 @@ const (
 	middlewareName = "mysql"
 	singleTemplate = "single"
 	defaultPort    = 3306
+	defaultVersion = "v8.0"
 )
 
 func init() {
@@ -54,16 +57,23 @@ func (s *singleSpec) Normalize(input tpl.ServiceInput, index int) (model.Bluepri
 	}
 
 	values := tpl.MergeValues(s.DefaultValues(), input.Values)
-	values["service_name"] = defaultStringValue(values["service_name"], name)
-	values["container_name"] = defaultStringValue(values["container_name"], name)
+	values[runtimecompose.ValueServiceName] = defaultStringValue(values[runtimecompose.ValueServiceName], name)
+	values[runtimecompose.ValueContainerName] = defaultStringValue(values[runtimecompose.ValueContainerName], name)
+	version := defaultStringValue(values[runtimecompose.ValueVersion], defaultVersion)
+	if err := validateVersion(version); err != nil {
+		return model.BlueprintService{}, fmt.Errorf("normalize mysql single version: %w", err)
+	}
+	values[runtimecompose.ValueVersion] = version
+	values[runtimecompose.ValueImage] = defaultStringValue(values[runtimecompose.ValueImage], imageForVersion(version))
+	values[runtimecompose.ValueDataDir] = defaultStringValue(values[runtimecompose.ValueDataDir], fmt.Sprintf("./data/%s", name))
 
-	port, err := normalizePort(values["port"])
+	port, err := normalizePort(values[runtimecompose.ValuePort])
 	if err != nil {
 		return model.BlueprintService{}, fmt.Errorf("normalize mysql single port: %w", err)
 	}
-	values["port"] = port
+	values[runtimecompose.ValuePort] = port
 
-	rootPassword, ok := values["root_password"].(string)
+	rootPassword, ok := values[runtimecompose.ValueRootPassword].(string)
 	if !ok || rootPassword == "" {
 		return model.BlueprintService{}, fmt.Errorf("normalize mysql single root_password: must be a non-empty string")
 	}
@@ -95,12 +105,107 @@ func (s *singleSpec) BuildRuntimeContexts(runtimeType runtime.EnvironmentType) (
 			return nil, err
 		}
 
-		contexts = append(contexts, runtime.EnvironmentContext{
-			RuntimeType: runtimeType,
+		port, err := normalizePort(service.Values[runtimecompose.ValuePort])
+		if err != nil {
+			return nil, fmt.Errorf("mysql single build runtime context port: %w", err)
+		}
+
+		rootPassword := service.Values[runtimecompose.ValueRootPassword].(string)
+		version := service.Values[runtimecompose.ValueVersion].(string)
+		containerName := service.Values[runtimecompose.ValueContainerName].(string)
+		image := service.Values[runtimecompose.ValueImage].(string)
+		dataDir := service.Values[runtimecompose.ValueDataDir].(string)
+		envKeyPrefix := serviceEnvKeyPrefix(service.Name)
+
+		contexts = append(contexts, runtime.ComposeContext{
+			EnvType:     runtimeType,
 			ServiceName: service.Name,
 			Middleware:  service.Middleware,
 			Template:    service.Template,
-			Values:      tpl.MergeValues(nil, service.Values),
+			Service: runtime.ServiceSpec{
+				Image:         image,
+				Platform:      platformForVersion(version),
+				ContainerName: containerName,
+				Restart:       "unless-stopped",
+				Environment: map[string]string{
+					"MYSQL_ROOT_PASSWORD": rootPassword,
+					"MYSQL_ROOT_HOST":     "%",
+				},
+				Ports: []runtime.PortBinding{
+					{
+						HostPort:      port,
+						ContainerPort: 3306,
+						Protocol:      "tcp",
+					},
+				},
+				Volumes: []runtime.VolumeMount{
+					{
+						Source: dataDir,
+						Target: "/var/lib/mysql",
+					},
+				},
+				Command: commandForVersion(version),
+				HealthCheck: &runtime.HealthCheck{
+					Test: []string{
+						"CMD",
+						"mysqladmin",
+						"ping",
+						"-h",
+						"127.0.0.1",
+						"-uroot",
+						"-p" + rootPassword,
+					},
+					Interval:    "5s",
+					Timeout:     "5s",
+					Retries:     30,
+					StartPeriod: "20s",
+				},
+			},
+			Assets: []runtime.AssetSpec{
+				{
+					Name:    "mysql-env",
+					PathKey: "env_file",
+					Content: fmt.Sprintf(
+						"%s_VERSION=%s\n%s_IMAGE=%s\n%s_PORT=%d\n%s_ROOT_PASSWORD=%s\n",
+						envKeyPrefix,
+						version,
+						envKeyPrefix,
+						image,
+						envKeyPrefix,
+						port,
+						envKeyPrefix,
+						rootPassword,
+					),
+					Mode:      0o644,
+					MergeMode: runtime.AssetMergeEnv,
+				},
+				{
+					Name:      "mysql-build",
+					PathKey:   "build_script",
+					Content:   fmt.Sprintf("echo \"MySQL %s (%s) compose stack started\"\n", service.Name, version),
+					Mode:      0o755,
+					MergeMode: runtime.AssetMergeScript,
+				},
+				{
+					Name:    "mysql-check",
+					PathKey: "check_script",
+					Content: fmt.Sprintf(
+						"docker exec %s mysql -uroot \"-p${%s_ROOT_PASSWORD}\" -e \"SELECT 1;\"\n",
+						containerName,
+						envKeyPrefix,
+					),
+					Mode:      0o755,
+					MergeMode: runtime.AssetMergeScript,
+				},
+				{
+					Name:      "mysql-readme",
+					PathKey:   "readme_file",
+					Content:   fmt.Sprintf("# MySQL %s\n\n- version: %s\n- image: %s\n- port: %d\n", service.Name, version, image, port),
+					Mode:      0o644,
+					MergeMode: runtime.AssetMergeReadme,
+				},
+			},
+			Metadata: tpl.MergeValues(nil, service.Values),
 		})
 	}
 	return contexts, nil
@@ -120,7 +225,7 @@ func (*singleSpec) Validate(service model.BlueprintService) error {
 		return fmt.Errorf("mysql single validate: unexpected template %q", service.Template)
 	}
 
-	port, err := normalizePort(service.Values["port"])
+	port, err := normalizePort(service.Values[runtimecompose.ValuePort])
 	if err != nil {
 		return fmt.Errorf("mysql single validate port: %w", err)
 	}
@@ -128,19 +233,37 @@ func (*singleSpec) Validate(service model.BlueprintService) error {
 		return fmt.Errorf("mysql single validate port: must be greater than 0")
 	}
 
-	rootPassword, ok := service.Values["root_password"].(string)
+	rootPassword, ok := service.Values[runtimecompose.ValueRootPassword].(string)
 	if !ok || rootPassword == "" {
 		return fmt.Errorf("mysql single validate root_password: must be a non-empty string")
 	}
 
-	serviceName, ok := service.Values["service_name"].(string)
+	version, ok := service.Values[runtimecompose.ValueVersion].(string)
+	if !ok || version == "" {
+		return fmt.Errorf("mysql single validate version: must be a non-empty string")
+	}
+	if err := validateVersion(version); err != nil {
+		return fmt.Errorf("mysql single validate version: %w", err)
+	}
+
+	serviceName, ok := service.Values[runtimecompose.ValueServiceName].(string)
 	if !ok || serviceName == "" {
 		return fmt.Errorf("mysql single validate service_name: must be a non-empty string")
 	}
 
-	containerName, ok := service.Values["container_name"].(string)
+	containerName, ok := service.Values[runtimecompose.ValueContainerName].(string)
 	if !ok || containerName == "" {
 		return fmt.Errorf("mysql single validate container_name: must be a non-empty string")
+	}
+
+	image, ok := service.Values[runtimecompose.ValueImage].(string)
+	if !ok || image == "" {
+		return fmt.Errorf("mysql single validate image: must be a non-empty string")
+	}
+
+	dataDir, ok := service.Values[runtimecompose.ValueDataDir].(string)
+	if !ok || dataDir == "" {
+		return fmt.Errorf("mysql single validate data_dir: must be a non-empty string")
 	}
 
 	return nil
@@ -156,9 +279,61 @@ func defaultStringValue(value any, fallback string) string {
 
 func (*singleSpec) DefaultValues() map[string]any {
 	return map[string]any{
-		"port":          defaultPort,
-		"root_password": "root",
+		runtimecompose.ValuePort:         defaultPort,
+		runtimecompose.ValueRootPassword: "root",
+		runtimecompose.ValueVersion:      defaultVersion,
+		runtimecompose.ValueImage:        "",
+		runtimecompose.ValueDataDir:      "",
 	}
+}
+
+func imageForVersion(version string) string {
+	switch version {
+	case "v5.7":
+		return "mysql:5.7"
+	case "v8.0":
+		return "mysql:8.0"
+	default:
+		return "mysql:8.0"
+	}
+}
+
+func commandForVersion(version string) []string {
+	command := []string{
+		"--server-id=1",
+		"--log-bin=mysql-bin",
+		"--binlog-format=ROW",
+		"--gtid-mode=ON",
+		"--enforce-gtid-consistency=ON",
+		"--skip-name-resolve=1",
+	}
+	if version == "v5.7" {
+		command = append(command, "--default-authentication-plugin=mysql_native_password")
+	}
+	return command
+}
+
+func validateVersion(version string) error {
+	switch version {
+	case "v5.7", "v8.0":
+		return nil
+	default:
+		return fmt.Errorf("unsupported version %q", version)
+	}
+}
+
+func platformForVersion(version string) string {
+	if version == "v5.7" {
+		return "linux/amd64"
+	}
+	return ""
+}
+
+func serviceEnvKeyPrefix(name string) string {
+	normalized := strings.ToUpper(name)
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+	normalized = strings.ReplaceAll(normalized, ".", "_")
+	return "MYSQL_" + normalized
 }
 
 func normalizePort(value any) (int, error) {

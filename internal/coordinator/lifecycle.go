@@ -26,12 +26,20 @@ type Result struct {
 
 // Status queries one persisted environment through its runtime driver.
 func (c Coordinator) Status(ctx context.Context, req EnvironmentRequest) (*Result, error) {
-	env, driver, err := c.loadEnvironmentDriver(req.EnvironmentID)
+	env, artifact, driver, err := c.loadEnvironmentRuntime(req.EnvironmentID)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := driver.Status(ctx, env)
+	plan, err := driver.PlanLifecycle(ctx, runtime.BuildLifecycleRequest{
+		Environment: env,
+		Artifact:    artifact,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := driver.Status(ctx, *plan)
 	if err != nil {
 		return nil, err
 	}
@@ -50,12 +58,20 @@ func (c Coordinator) Status(ctx context.Context, req EnvironmentRequest) (*Resul
 
 // Start starts one persisted environment and records the new status.
 func (c Coordinator) Start(ctx context.Context, req EnvironmentRequest) (*Result, error) {
-	env, driver, err := c.loadEnvironmentDriver(req.EnvironmentID)
+	env, artifact, driver, err := c.loadEnvironmentRuntime(req.EnvironmentID)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := driver.Start(ctx, env)
+	plan, err := driver.PlanLifecycle(ctx, runtime.BuildLifecycleRequest{
+		Environment: env,
+		Artifact:    artifact,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := driver.Start(ctx, *plan)
 	if err != nil {
 		return nil, err
 	}
@@ -74,12 +90,20 @@ func (c Coordinator) Start(ctx context.Context, req EnvironmentRequest) (*Result
 
 // Stop stops one persisted environment and records the new status.
 func (c Coordinator) Stop(ctx context.Context, req EnvironmentRequest) (*Result, error) {
-	env, driver, err := c.loadEnvironmentDriver(req.EnvironmentID)
+	env, artifact, driver, err := c.loadEnvironmentRuntime(req.EnvironmentID)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := driver.Stop(ctx, env)
+	plan, err := driver.PlanLifecycle(ctx, runtime.BuildLifecycleRequest{
+		Environment: env,
+		Artifact:    artifact,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := driver.Stop(ctx, *plan)
 	if err != nil {
 		return nil, err
 	}
@@ -97,17 +121,25 @@ func (c Coordinator) Stop(ctx context.Context, req EnvironmentRequest) (*Result,
 
 // Destroy destroys one persisted environment, then cleans up its local runtime workspace.
 func (c Coordinator) Destroy(ctx context.Context, req EnvironmentRequest) (*Result, error) {
-	env, driver, err := c.loadEnvironmentDriver(req.EnvironmentID)
+	env, artifact, driver, err := c.loadEnvironmentRuntime(req.EnvironmentID)
 	if err != nil {
 		return nil, err
 	}
 
-	destroyResult, err := driver.Destroy(ctx, env)
+	plan, err := driver.PlanLifecycle(ctx, runtime.BuildLifecycleRequest{
+		Environment: env,
+		Artifact:    artifact,
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	cleanupResult, err := driver.Cleanup(ctx, env)
+	destroyResult, err := driver.Destroy(ctx, *plan)
+	if err != nil {
+		return nil, err
+	}
+
+	cleanupResult, err := driver.Cleanup(ctx, *plan)
 	if err != nil {
 		return nil, err
 	}
@@ -141,4 +173,16 @@ func (c Coordinator) loadEnvironmentDriver(id string) (model.Environment, runtim
 	}
 
 	return env, driver, nil
+}
+
+func (c Coordinator) loadEnvironmentRuntime(id string) (model.Environment, runtime.RuntimeArtifact, runtime.Driver, error) {
+	env, driver, err := c.loadEnvironmentDriver(id)
+	if err != nil {
+		return model.Environment{}, runtime.RuntimeArtifact{}, nil, err
+	}
+	artifact, err := c.environments.GetRuntimeArtifact(id)
+	if err != nil {
+		return model.Environment{}, runtime.RuntimeArtifact{}, nil, err
+	}
+	return env, artifact, driver, nil
 }

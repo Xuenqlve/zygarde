@@ -1,7 +1,25 @@
-name: mock-demo
+name: mysql-double-demo
 version: "v1"
-description: Minimal blueprint for verifying the create preflight flow
+description: Two mysql single instances in one compose environment
+
+runtime:
+  project-name: mysql-double-demo
+
 services:
-  - middleware: mock
+  - name: mysql-1
+    middleware: mysql
+    template: single
     values:
-      foo: bar
+      version: v5.7
+      port: 3306
+      root_password: root1
+      data_dir: ./data/mysql-1
+
+  - name: mysql-2
+    middleware: mysql
+    template: single
+    values:
+      version: v8.0
+      port: 3307
+      root_password: root2
+      data_dir: ./data/mysql-2

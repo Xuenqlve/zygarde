@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/xuenqlve/zygarde/internal/model"
+	"github.com/xuenqlve/zygarde/internal/runtime"
 )
 
 func TestApplyBuildsComposeCommandAndExtractsEndpoints(t *testing.T) {
@@ -18,10 +19,19 @@ func TestApplyBuildsComposeCommandAndExtractsEndpoints(t *testing.T) {
 		},
 	}
 	executor := NewExecutor(runner)
-	env := testEnvironment(t)
-	rendered := model.RenderResult{PrimaryFile: env.ComposeFile}
+	env, workspaceDir := testEnvironment(t)
+	plan := runtime.ApplyPlan{
+		Environment:  env,
+		WorkspaceDir: workspaceDir,
+		ProjectName:  "demo-project",
+		PrimaryFile:  filepath.Join(workspaceDir, "docker-compose.yaml"),
+		BuildScript:  filepath.Join(workspaceDir, "build.sh"),
+	}
+	if err := os.WriteFile(plan.BuildScript, []byte("#!/usr/bin/env bash\n"), 0o755); err != nil {
+		t.Fatalf("write build script: %v", err)
+	}
 
-	result, err := executor.Apply(context.Background(), env, rendered)
+	result, err := executor.Apply(context.Background(), plan)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -31,10 +41,13 @@ func TestApplyBuildsComposeCommandAndExtractsEndpoints(t *testing.T) {
 	if len(result.Endpoints) != 1 {
 		t.Fatalf("expected one endpoint, got %d", len(result.Endpoints))
 	}
-	if got := runner.calls[0].args; fmt.Sprint(got) != "[compose -p demo-project -f "+env.ComposeFile+" up -d]" {
+	if got := runner.calls[0].name; got != "/bin/sh" {
+		t.Fatalf("unexpected apply command: %s", got)
+	}
+	if got := runner.calls[0].args; fmt.Sprint(got) != "["+plan.BuildScript+"]" {
 		t.Fatalf("unexpected apply args: %v", got)
 	}
-	if got := runner.calls[1].args; fmt.Sprint(got) != "[compose -p demo-project -f "+env.ComposeFile+" ps -a --format json]" {
+	if got := runner.calls[1].args; fmt.Sprint(got) != "[compose -p demo-project -f "+plan.PrimaryFile+" ps -a --format json]" {
 		t.Fatalf("unexpected status args: %v", got)
 	}
 }
@@ -47,7 +60,7 @@ func TestStatusMapsStoppedState(t *testing.T) {
 	}
 	executor := NewExecutor(runner)
 
-	result, err := executor.Status(context.Background(), testEnvironment(t))
+	result, err := executor.Status(context.Background(), testLifecyclePlan(t))
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
@@ -58,19 +71,25 @@ func TestStatusMapsStoppedState(t *testing.T) {
 
 func TestCleanupRemovesWorkspaceDir(t *testing.T) {
 	executor := NewExecutor(&fakeRunner{})
-	env := testEnvironment(t)
+	env, workspaceDir := testEnvironment(t)
+	plan := runtime.LifecyclePlan{
+		Environment:  env,
+		WorkspaceDir: workspaceDir,
+		ProjectName:  "demo-project",
+		PrimaryFile:  filepath.Join(workspaceDir, "docker-compose.yaml"),
+	}
 
-	if err := os.WriteFile(filepath.Join(env.WorkspaceDir, "tmp.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workspaceDir, "tmp.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	if _, err := os.Stat(env.WorkspaceDir); err != nil {
+	if _, err := os.Stat(workspaceDir); err != nil {
 		t.Fatalf("stat workspace: %v", err)
 	}
 
-	if _, err := executor.Cleanup(context.Background(), env); err != nil {
+	if _, err := executor.Cleanup(context.Background(), plan); err != nil {
 		t.Fatalf("cleanup: %v", err)
 	}
-	if _, err := os.Stat(env.WorkspaceDir); !os.IsNotExist(err) {
+	if _, err := os.Stat(workspaceDir); !os.IsNotExist(err) {
 		t.Fatalf("expected workspace dir removed, got err=%v", err)
 	}
 }
@@ -105,7 +124,7 @@ func (f *fakeRunner) Run(_ context.Context, workdir string, name string, args ..
 	return result.output, result.err
 }
 
-func testEnvironment(t *testing.T) model.Environment {
+func testEnvironment(t *testing.T) (model.Environment, string) {
 	t.Helper()
 	workspaceDir := t.TempDir()
 	composeFile := filepath.Join(workspaceDir, "docker-compose.yaml")
@@ -113,9 +132,17 @@ func testEnvironment(t *testing.T) model.Environment {
 		t.Fatalf("write compose file: %v", err)
 	}
 	return model.Environment{
-		Name:         "demo",
-		ProjectName:  "demo-project",
+		Name: "demo",
+	}, workspaceDir
+}
+
+func testLifecyclePlan(t *testing.T) runtime.LifecyclePlan {
+	t.Helper()
+	env, workspaceDir := testEnvironment(t)
+	return runtime.LifecyclePlan{
+		Environment:  env,
 		WorkspaceDir: workspaceDir,
-		ComposeFile:  composeFile,
+		ProjectName:  "demo-project",
+		PrimaryFile:  filepath.Join(workspaceDir, "docker-compose.yaml"),
 	}
 }

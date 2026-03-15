@@ -82,12 +82,40 @@ func (s *echoSpec) Configure(input tpl.ServiceInput, index int) (model.Blueprint
 func (s *echoSpec) BuildRuntimeContexts(runtimeType runtime.EnvironmentType) ([]runtime.EnvironmentContext, error) {
 	contexts := make([]runtime.EnvironmentContext, 0, len(s.services))
 	for _, service := range s.services {
-		contexts = append(contexts, runtime.EnvironmentContext{
-			RuntimeType: runtimeType,
+		contexts = append(contexts, runtime.ComposeContext{
+			EnvType:     runtimeType,
 			ServiceName: service.Name,
 			Middleware:  service.Middleware,
 			Template:    service.Template,
-			Values:      tpl.MergeValues(nil, service.Values),
+			Service: runtime.ServiceSpec{
+				Image:         "alpine:3.20",
+				ContainerName: service.Name,
+				Command:       []string{"sleep", "infinity"},
+			},
+			Assets: []runtime.AssetSpec{
+				{
+					Name:      "mock-build",
+					PathKey:   "build_script",
+					Content:   "echo \"Mock compose stack started\"\n",
+					Mode:      0o755,
+					MergeMode: runtime.AssetMergeScript,
+				},
+				{
+					Name:      "mock-check",
+					PathKey:   "check_script",
+					Content:   "docker compose ps\n",
+					Mode:      0o755,
+					MergeMode: runtime.AssetMergeScript,
+				},
+				{
+					Name:      "mock-readme",
+					PathKey:   "readme_file",
+					Content:   fmt.Sprintf("# Mock %s\n\n- middleware: %s\n", service.Name, service.Middleware),
+					Mode:      0o644,
+					MergeMode: runtime.AssetMergeReadme,
+				},
+			},
+			Metadata: tpl.MergeValues(nil, service.Values),
 		})
 	}
 	return contexts, nil

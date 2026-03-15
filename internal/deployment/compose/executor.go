@@ -28,14 +28,33 @@ func NewExecutor(runner CommandRunner) Executor {
 	return Executor{runner: runner}
 }
 
-// Apply executes `docker compose up -d`.
-func (e Executor) Apply(ctx context.Context, env model.Environment, rendered model.RenderResult) (*runtime.OperationResult, error) {
-	output, err := e.runCompose(ctx, env, "up", "-d")
+// Apply executes the generated build.sh entrypoint for one compose bundle.
+func (e Executor) Apply(ctx context.Context, plan runtime.ApplyPlan) (*runtime.OperationResult, error) {
+	env := plan.Environment
+	script := plan.BuildScript
+	if script == "" {
+		return nil, fmt.Errorf("compose apply: build script is required")
+	}
+	workdir := plan.WorkspaceDir
+	if workdir == "" {
+		return nil, fmt.Errorf("compose apply: workspace dir is required")
+	}
+	scriptPath, err := filepath.Abs(script)
+	if err != nil {
+		return nil, fmt.Errorf("compose apply: resolve build script: %w", err)
+	}
+	output, err := e.runner.Run(ctx, workdir, "/bin/sh", scriptPath)
 	if err != nil {
 		return nil, fmt.Errorf("compose apply: %w: %s", err, strings.TrimSpace(output))
 	}
 
-	status, statusMessage, endpoints, statusErr := e.inspectProject(ctx, env)
+	statusPlan := runtime.LifecyclePlan{
+		Environment:  env,
+		WorkspaceDir: plan.WorkspaceDir,
+		ProjectName:  plan.ProjectName,
+		PrimaryFile:  plan.PrimaryFile,
+	}
+	status, statusMessage, endpoints, statusErr := e.inspectProject(ctx, statusPlan)
 	if statusErr != nil {
 		return nil, statusErr
 	}
@@ -44,7 +63,7 @@ func (e Executor) Apply(ctx context.Context, env model.Environment, rendered mod
 		Message: strings.TrimSpace(fmt.Sprintf(
 			"compose apply completed for %s using %s (%s: %s)",
 			env.Name,
-			rendered.PrimaryFile,
+			script,
 			status,
 			statusMessage,
 		)),
@@ -54,8 +73,8 @@ func (e Executor) Apply(ctx context.Context, env model.Environment, rendered mod
 }
 
 // Status queries `docker compose ps --format json`.
-func (e Executor) Status(ctx context.Context, env model.Environment) (*runtime.StatusResult, error) {
-	status, message, endpoints, err := e.inspectProject(ctx, env)
+func (e Executor) Status(ctx context.Context, plan runtime.LifecyclePlan) (*runtime.StatusResult, error) {
+	status, message, endpoints, err := e.inspectProject(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -67,51 +86,52 @@ func (e Executor) Status(ctx context.Context, env model.Environment) (*runtime.S
 }
 
 // Start executes `docker compose start`.
-func (e Executor) Start(ctx context.Context, env model.Environment) (*runtime.OperationResult, error) {
-	output, err := e.runCompose(ctx, env, "start")
+func (e Executor) Start(ctx context.Context, plan runtime.LifecyclePlan) (*runtime.OperationResult, error) {
+	output, err := e.runCompose(ctx, plan, "start")
 	if err != nil {
 		return nil, fmt.Errorf("compose start: %w: %s", err, strings.TrimSpace(output))
 	}
 	return &runtime.OperationResult{
-		Message: strings.TrimSpace(fmt.Sprintf("compose start completed for %s: %s", env.Name, strings.TrimSpace(output))),
+		Message: strings.TrimSpace(fmt.Sprintf("compose start completed for %s: %s", plan.Environment.Name, strings.TrimSpace(output))),
 		Changed: true,
 	}, nil
 }
 
 // Stop executes `docker compose stop`.
-func (e Executor) Stop(ctx context.Context, env model.Environment) (*runtime.OperationResult, error) {
-	output, err := e.runCompose(ctx, env, "stop")
+func (e Executor) Stop(ctx context.Context, plan runtime.LifecyclePlan) (*runtime.OperationResult, error) {
+	output, err := e.runCompose(ctx, plan, "stop")
 	if err != nil {
 		return nil, fmt.Errorf("compose stop: %w: %s", err, strings.TrimSpace(output))
 	}
 	return &runtime.OperationResult{
-		Message: strings.TrimSpace(fmt.Sprintf("compose stop completed for %s: %s", env.Name, strings.TrimSpace(output))),
+		Message: strings.TrimSpace(fmt.Sprintf("compose stop completed for %s: %s", plan.Environment.Name, strings.TrimSpace(output))),
 		Changed: true,
 	}, nil
 }
 
 // Destroy executes `docker compose down`.
-func (e Executor) Destroy(ctx context.Context, env model.Environment) (*runtime.OperationResult, error) {
-	output, err := e.runCompose(ctx, env, "down")
+func (e Executor) Destroy(ctx context.Context, plan runtime.LifecyclePlan) (*runtime.OperationResult, error) {
+	output, err := e.runCompose(ctx, plan, "down")
 	if err != nil {
 		return nil, fmt.Errorf("compose destroy: %w: %s", err, strings.TrimSpace(output))
 	}
 	return &runtime.OperationResult{
-		Message: strings.TrimSpace(fmt.Sprintf("compose destroy completed for %s: %s", env.Name, strings.TrimSpace(output))),
+		Message: strings.TrimSpace(fmt.Sprintf("compose destroy completed for %s: %s", plan.Environment.Name, strings.TrimSpace(output))),
 		Changed: true,
 	}, nil
 }
 
 // Cleanup removes the local runtime workspace after runtime resources are destroyed.
-func (e Executor) Cleanup(_ context.Context, env model.Environment) (*runtime.OperationResult, error) {
-	if env.WorkspaceDir == "" {
+func (e Executor) Cleanup(_ context.Context, plan runtime.LifecyclePlan) (*runtime.OperationResult, error) {
+	workdir := plan.WorkspaceDir
+	if workdir == "" {
 		return nil, fmt.Errorf("compose cleanup: workspace dir is required")
 	}
-	if err := os.RemoveAll(env.WorkspaceDir); err != nil {
+	if err := os.RemoveAll(workdir); err != nil {
 		return nil, fmt.Errorf("compose cleanup: %w", err)
 	}
 	return &runtime.OperationResult{
-		Message: fmt.Sprintf("compose cleanup completed for %s", env.Name),
+		Message: fmt.Sprintf("compose cleanup completed for %s", plan.Environment.Name),
 		Changed: true,
 	}, nil
 }
@@ -131,8 +151,8 @@ type psPublisher struct {
 	Protocol      string `json:"Protocol"`
 }
 
-func (e Executor) inspectProject(ctx context.Context, env model.Environment) (model.EnvironmentStatus, string, []model.Endpoint, error) {
-	output, err := e.runCompose(ctx, env, "ps", "-a", "--format", "json")
+func (e Executor) inspectProject(ctx context.Context, plan runtime.LifecyclePlan) (model.EnvironmentStatus, string, []model.Endpoint, error) {
+	output, err := e.runCompose(ctx, plan, "ps", "-a", "--format", "json")
 	if err != nil {
 		return model.EnvironmentStatusError, "", nil, fmt.Errorf("compose status: %w: %s", err, strings.TrimSpace(output))
 	}
@@ -143,34 +163,39 @@ func (e Executor) inspectProject(ctx context.Context, env model.Environment) (mo
 	}
 
 	status := mapEnvironmentStatus(entries)
-	message := fmt.Sprintf("compose status for %s: %s (%d service(s))", env.Name, status, len(entries))
+	message := fmt.Sprintf("compose status for %s: %s (%d service(s))", plan.Environment.Name, status, len(entries))
 	return status, message, buildEndpoints(entries), nil
 }
 
-func (e Executor) runCompose(ctx context.Context, env model.Environment, args ...string) (string, error) {
-	baseArgs, err := composeBaseArgs(env)
+func (e Executor) runCompose(ctx context.Context, plan runtime.LifecyclePlan, args ...string) (string, error) {
+	baseArgs, err := composeBaseArgs(plan)
 	if err != nil {
 		return "", err
 	}
-	workdir, err := filepath.Abs(env.WorkspaceDir)
+	workdir := plan.WorkspaceDir
+	if workdir == "" {
+		return "", fmt.Errorf("compose workdir is required")
+	}
+	workdir, err = filepath.Abs(workdir)
 	if err != nil {
 		return "", fmt.Errorf("resolve compose workdir: %w", err)
 	}
 	return e.runner.Run(ctx, workdir, dockerCommand, append(baseArgs, args...)...)
 }
 
-func composeBaseArgs(env model.Environment) ([]string, error) {
-	if env.ProjectName == "" {
+func composeBaseArgs(plan runtime.LifecyclePlan) ([]string, error) {
+	projectName := plan.ProjectName
+	if projectName == "" {
 		return nil, fmt.Errorf("compose project name is required")
 	}
-	if env.ComposeFile == "" {
+	if plan.PrimaryFile == "" {
 		return nil, fmt.Errorf("compose file is required")
 	}
-	composeFile, err := filepath.Abs(env.ComposeFile)
+	composeFile, err := filepath.Abs(plan.PrimaryFile)
 	if err != nil {
 		return nil, fmt.Errorf("resolve compose file: %w", err)
 	}
-	return []string{"compose", "-p", env.ProjectName, "-f", composeFile}, nil
+	return []string{"compose", "-p", projectName, "-f", composeFile}, nil
 }
 
 func parsePSOutput(output string) ([]psEntry, error) {

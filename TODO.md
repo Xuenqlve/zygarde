@@ -82,10 +82,10 @@
 - [x] 实现 blueprint 基础能力，支持 service 默认补齐与唯一性校验
 - [x] 实现 pkg 的 `Configure` / `BuildRuntimeContexts` 主流程，先以 `mysql + single + compose` 与 `mock + echo + compose` 跑通
 - [x] 定义 runtime 目录布局与 project name 规则，落在 `internal/runtime`
-- [x] 实现 runtime/render 基础能力，消费 `[]EnvironmentContext` 生成 `docker-compose.yaml`
-- [x] 定义 deployment 接口并实现 compose 后端骨架
-- [x] 实现 environment 生命周期和状态持久化骨架
-- [x] 实现 coordinator 的 `create`、`status`、`destroy`
+- [x] 实现 runtime/render 基础能力，消费 `[]EnvironmentContext` 生成完整 Compose bundle
+- [x] 定义 deployment 接口并实现 compose 后端，支持 `build.sh` 驱动的真实 Compose 生命周期执行
+- [x] 实现 environment 生命周期和状态持久化骨架，并补充 runtime artifact 持久化
+- [x] 实现 coordinator 的 `create`、`status`、`start`、`stop`、`destroy`
 - [x] 实现 CLI 入口并打通主链路
 
 ### create 前半段 TODO
@@ -109,13 +109,17 @@
 - [x] `status`、`start`、`stop`、`destroy` CLI 已接入 `coordinator -> runtime driver -> compose executor`
 - [x] compose executor 已具备真实 `docker compose up/down/start/stop/ps -a` 执行能力
 - [x] compose executor 已补 fake runner 单测与基于 `docker/mysql/single_v5.7` 的真实 MySQL 集成测试
-- [ ] Compose renderer 当前仍为占位实现，尚未消费真实 middleware 语义生成可运行服务定义
-- [ ] `create` 主链路虽已完整接通，但对真实中间件模板的渲染仍需继续完善
+- [x] Compose renderer 已消费真实 middleware 语义，生成完整 Compose bundle：`docker-compose.yml / .env / build.sh / check.sh / README.md`
+- [x] `EnvironmentContext` 已贯穿 `Prepare / Render / Apply` 三阶段，并收敛出 `PreparePlan / RenderPlan / ApplyPlan / LifecyclePlan`
+- [x] Compose runtime 私有字段已从公共 `Environment` 中逐步拆出，改由 runtime artifact 和阶段 plan 承接
+- [x] `pkg/mysql/single.go` 已支持一个 blueprint 内多实例 single MySQL
+- [x] `pkg/mysql/single.go` 已支持通过 `version` 选择 `v5.7 / v8.0`，并将版本差异收敛到单实现入口
 
 #### P1
 
 - [x] 为一期样板中间件补齐多实例配置缓存与 compose context 生成
 - [x] 增加 `start`、`stop`
+- [x] 将 `mysql/single` 的 Compose 渲染与版本差异（`v5.7 / v8.0`）收敛到单一 `pkg` 实现
 - [ ] 增加 `list`
 - [ ] 补充错误恢复和失败清理逻辑
 - [ ] 将 `start` 生命周期恢复路径补齐为稳定的真实集成测试
@@ -135,6 +139,35 @@
 - [x] 修复 compose executor 的相对路径问题，统一使用绝对 `workdir` / `compose file`
 - [x] 修复 `docker compose ps --format json` 在不同输出形态下的解析兼容性
 - [x] 修复 stop 后 `ps` 空结果导致误判 destroyed 的问题，统一使用 `docker compose ps -a --format json`
+- [x] 引入 `PreparePlan / RenderPlan / ApplyPlan / LifecyclePlan`，将主流程与生命周期阶段显式化
+- [x] 引入 runtime artifact 持久化，承接 `PrimaryFile / WorkspaceDir / ProjectName` 等 runtime 私有信息
+- [x] 为 `pkg/*` Compose 版实现补充规范文档，并建立 `compose-stack -> docker/目录事实 -> pkg 单实现入口` 的设计约束
+- [x] `config/zygarde.yaml` 已可启动两个 MySQL single，并支持 `v5.7 + v8.0` 混合版本
+
+### 下一阶段重点：12 个中间件的 Compose type 实现
+
+目标：参考 `compose-stack` 与 `docker/<middleware>/<scenario>_<version>/` 已验证资产，将 12 个中间件的 Compose 版能力统一收敛到 `pkg/*` 的单实现入口中。
+
+约束：
+
+- 每个中间件都应优先通过单一 `pkg/<middleware>/<template>.go` 入口承接多版本差异
+- 版本差异尽量通过 `version` 控制，不复制多份近似实现
+- 输出必须符合当前 `EnvironmentContext -> Prepare / Render / Apply` 主流程与 Compose bundle 规范
+
+#### Compose type 中间件 TODO
+
+- [ ] MySQL：完成 `single / master-slave` Compose type，覆盖 `v5.7 / v8.0`
+- [ ] Redis：完成 `single / master-slave / cluster` Compose type，覆盖 `v6.2 / v7.4`
+- [ ] MongoDB：完成 `single / replica-set / sharded` Compose type，覆盖 `v6.0 / v7.0`
+- [ ] PostgreSQL：完成 `single / master-slave` Compose type，覆盖 `v16 / v17`
+- [ ] RabbitMQ：完成 `single / cluster` Compose type，覆盖 `v4.2`
+- [ ] Kafka：完成 `single / cluster` Compose type，覆盖 `v4.2`
+- [ ] TiDB：完成 `single / cluster` Compose type，覆盖 `v6.7`
+- [ ] etcd：完成 `single / cluster` Compose type，覆盖 `v3.6`
+- [ ] Consul：完成 `single / cluster` Compose type，覆盖 `v1.20`
+- [ ] ClickHouse：完成 `single / cluster` Compose type，覆盖 `v24 / v25`
+- [ ] ZooKeeper：完成 `single / cluster` Compose type，覆盖 `v3.8 / v3.9`
+- [ ] Elasticsearch：完成 `single / cluster` Compose type，覆盖 `v8.18 / v8.19`
 
 ### 后续追加原则
 

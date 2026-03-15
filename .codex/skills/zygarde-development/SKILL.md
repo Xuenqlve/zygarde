@@ -76,6 +76,42 @@ Zygarde 项目的统一开发 skill。
 - `coordinator -> runtime driver -> render -> deployment -> environment`
 - `status/start/stop/destroy` 也应沿 `coordinator -> runtime driver -> environment` 组织，而不是绕过主流程直接执行 runtime 命令
 
+当前 runtime 主流程约束进一步明确为：
+- `pkg/*` 在 `BuildRuntimeContexts()` 中返回 `[]EnvironmentContext`，而不是返回某个 runtime 私有 executor 参数。
+- `EnvironmentContext` 是串联 `Prepare / Render / Apply` 三阶段的统一材料接口。
+- `PrepareInput / RenderInput / ApplyInput` 允许按开发阶段渐进补充字段，不要求一开始设计成大而全对象。
+- `Prepare` 负责环境级目录、命名、路径规划，不负责生成 runtime 产物内容。
+- `Render` 负责根据 `[]EnvironmentContext` 生成完整 runtime bundle；对 Compose 来说不只生成 `docker-compose.yml`，还要生成脚本与附属资产。
+- `Apply` 负责执行已生成 bundle；对 Compose 来说默认执行 `build.sh`，而不是直接在 executor 中硬编码 `docker compose up -d`。
+- 阶段产物应优先建模为 plan/result，而不是把 runtime 私有字段塞入全局公共 model。
+
+当前 `pkg/*` 的 Compose 版建设目标还必须满足：
+- 最终要覆盖 `compose-stack` 当前支持的 12 个中间件能力，而不是只覆盖单个 demo middleware。
+- 对同一个 middleware/template 的多个版本目录，应在 `pkg/*` 中收敛为单一实现入口，通过 `version` 控制差异，而不是按版本复制多个方法。
+- `docker/<middleware>/<scenario>_<version>/` 应被视为已验证行为与版本差异的事实来源；`pkg/*` 负责对这些差异做抽象收敛。
+
+关于 `EnvironmentContext` 的增量设计，当前建议遵守：
+- 先定义最小接口，再用主流程反推字段，不提前设计大而全公共结构。
+- 如果 `Prepare` 缺字段，只补 `PrepareInput`。
+- 如果 `Render` 缺字段，只补 `RenderInput`。
+- 如果 `Apply` 缺字段，只补 `ApplyInput`。
+- 避免为了某一个 runtime 临时需求污染其他阶段输入。
+
+关于 Compose 产物生成，当前建议遵守：
+- 统一参考 `compose-stack` 的目录规范与脚本入口。
+- Render 阶段生成完整 Compose bundle，至少包含：
+  - `docker-compose.yml`
+  - `build.sh`
+  - `check.sh`
+  - `.env`
+  - `README.md`
+  - `data/`
+- 多个 `EnvironmentContext` 可共同贡献同名资产；Render 必须通过“资产池 + 合并策略”统一归并，而不是简单覆盖。
+- `docker-compose.yml` 通过结构合并生成，不走文本拼接。
+- `.env` 按键值归并；相同 key 不同值应视为冲突。
+- `build.sh` 与 `check.sh` 按脚本片段归并，由 Render 统一生成完整脚本壳。
+- SQL、配置文件等独立资产应允许按唯一文件名直接落盘，不强行参与同名合并。
+
 ## 实现约束
 
 - 新增代码前，先确定所属模块，再决定文件路径。
@@ -83,6 +119,8 @@ Zygarde 项目的统一开发 skill。
 - 若一个能力负责中间件注册、blueprint 归一化、runtime 产物拼装、部署执行等通用流程，应放在 `internal/`。
 - 新目录或新模块建立时，命名要与现有语义一致，避免临时名称。
 - 没有明确收益时，不提前引入复杂框架或过度抽象。
+- 不要把 Compose 专属字段继续塞进“伪公共 environment 模型”中；runtime 私有产物应放到对应阶段 plan/result 中。
+- 不要在 `internal/*` 中推断某个 middleware 的镜像、端口、环境变量默认值；这些必须在 `pkg/*` 中先转换好。
 
 ## 交付检查
 
@@ -96,5 +134,6 @@ Zygarde 项目的统一开发 skill。
 
 - 目录与架构边界： [architecture.md](references/architecture.md)
 - pkg 实现规范： [pkg-middleware-guidelines.md](references/pkg-middleware-guidelines.md)
+- pkg Compose 模板规范： [pkg-compose-template-guidelines.md](references/pkg-compose-template-guidelines.md)
 - runtime driver 规则： [runtime-driver-guidelines.md](references/runtime-driver-guidelines.md)
 - TODO 模板： [todo-template.md](references/todo-template.md)

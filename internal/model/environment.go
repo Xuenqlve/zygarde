@@ -24,9 +24,6 @@ type Environment struct {
 	BlueprintVersion string
 	RuntimeType      string
 	Status           EnvironmentStatus
-	ProjectName      string
-	WorkspaceDir     string
-	ComposeFile      string
 	Endpoints        []Endpoint
 	CreatedAt        time.Time
 	UpdatedAt        time.Time

@@ -21,7 +21,7 @@ type CreateRequest struct {
 
 // Coordinator orchestrates the create flow.
 type Coordinator struct {
-	blueprints    store.BlueprintStore
+	blueprints   store.BlueprintStore
 	environments environment.Store
 	runtimes     runtime.Registry
 }
@@ -29,7 +29,7 @@ type Coordinator struct {
 // New creates a coordinator instance.
 func New(blueprints store.BlueprintStore, environments environment.Store, runtimes runtime.Registry) Coordinator {
 	return Coordinator{
-		blueprints:    blueprints,
+		blueprints:   blueprints,
 		environments: environments,
 		runtimes:     runtimes,
 	}
@@ -89,8 +89,15 @@ func (c Coordinator) Create(ctx context.Context, req CreateRequest) (*CreateResu
 	}
 
 	prepared, err := driver.Prepare(ctx, runtime.PrepareRequest{
-		Blueprint: normalized,
-		Contexts:  runtimeContexts,
+		Input: runtime.PrepareInput{
+			BlueprintName:    normalized.Name,
+			BlueprintVersion: normalized.Version,
+			RuntimeType:      req.EnvironmentType,
+			RequestedName:    normalized.Name,
+			ProjectName:      normalized.Runtime.ProjectName,
+			WorkspaceRoot:    ".zygarde/environments",
+		},
+		Contexts: runtimeContexts,
 	})
 	if err != nil {
 		return nil, err
@@ -104,10 +111,15 @@ func (c Coordinator) Create(ctx context.Context, req CreateRequest) (*CreateResu
 		return nil, err
 	}
 
-	applied, err := driver.Apply(ctx, runtime.ApplyRequest{
+	applyPlan, err := driver.PlanApply(ctx, runtime.BuildApplyRequest{
 		Prepared: *prepared,
 		Rendered: *rendered,
+		Contexts: runtimeContexts,
 	})
+	if err != nil {
+		return nil, err
+	}
+	applied, err := driver.Apply(ctx, *applyPlan)
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +129,16 @@ func (c Coordinator) Create(ctx context.Context, req CreateRequest) (*CreateResu
 	env.Endpoints = applied.Endpoints
 	env.UpdatedAt = time.Now()
 	if err := c.environments.Save(env); err != nil {
+		return nil, err
+	}
+	if err := c.environments.SaveRuntimeArtifact(runtime.RuntimeArtifact{
+		EnvironmentID: env.ID,
+		RuntimeType:   req.EnvironmentType,
+		WorkspaceDir:  applyPlan.WorkspaceDir,
+		ProjectName:   applyPlan.ProjectName,
+		PrimaryFile:   applyPlan.PrimaryFile,
+		Files:         prepared.Files,
+	}); err != nil {
 		return nil, err
 	}
 
