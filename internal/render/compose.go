@@ -12,16 +12,23 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+const defaultContainerEngine = "docker"
+
 // ComposeRenderer generates a minimal docker-compose artifact for the create flow.
-type ComposeRenderer struct{}
+type ComposeRenderer struct {
+	containerEngine string
+}
 
 // NewComposeRenderer creates a compose renderer instance.
-func NewComposeRenderer() ComposeRenderer {
-	return ComposeRenderer{}
+func NewComposeRenderer(containerEngine string) ComposeRenderer {
+	if containerEngine == "" {
+		containerEngine = defaultContainerEngine
+	}
+	return ComposeRenderer{containerEngine: containerEngine}
 }
 
 // Render builds a minimal compose document from normalized runtime contexts.
-func (ComposeRenderer) Render(_ context.Context, req Request) (*runtime.RenderPlan, error) {
+func (r ComposeRenderer) Render(_ context.Context, req Request) (*runtime.RenderPlan, error) {
 	services := make([]string, 0, len(req.Contexts))
 	document := composeDocument{
 		Services: make(map[string]composeService, len(req.Contexts)),
@@ -70,8 +77,9 @@ func (ComposeRenderer) Render(_ context.Context, req Request) (*runtime.RenderPl
 	assets = append(assets, runtime.RenderedAsset{Path: req.Prepared.Layout.EnvFile, Mode: 0o644})
 
 	buildContent := mergeScriptAssets(
+		r.containerEngine,
 		pool.grouped["build_script"],
-		fmt.Sprintf("docker compose -p %q -f %q up -d\n", req.Prepared.ProjectName, filepath.Base(req.Prepared.Layout.ComposeFile)),
+		fmt.Sprintf("\"$CONTAINER_ENGINE\" compose -p %q -f %q up -d\n", req.Prepared.ProjectName, filepath.Base(req.Prepared.Layout.ComposeFile)),
 	)
 	if err := writeAsset(req.Prepared.Layout.BuildScript, buildContent, 0o755); err != nil {
 		return nil, err
@@ -79,8 +87,9 @@ func (ComposeRenderer) Render(_ context.Context, req Request) (*runtime.RenderPl
 	assets = append(assets, runtime.RenderedAsset{Path: req.Prepared.Layout.BuildScript, Mode: 0o755})
 
 	checkContent := mergeScriptAssets(
+		r.containerEngine,
 		pool.grouped["check_script"],
-		fmt.Sprintf("docker compose -p %q -f %q ps\n", req.Prepared.ProjectName, filepath.Base(req.Prepared.Layout.ComposeFile)),
+		fmt.Sprintf("\"$CONTAINER_ENGINE\" compose -p %q -f %q ps\n", req.Prepared.ProjectName, filepath.Base(req.Prepared.Layout.ComposeFile)),
 	)
 	if err := writeAsset(req.Prepared.Layout.CheckScript, checkContent, 0o755); err != nil {
 		return nil, err
@@ -137,6 +146,7 @@ type composeDocument struct {
 type composeService struct {
 	Image         string            `yaml:"image,omitempty"`
 	Platform      string            `yaml:"platform,omitempty"`
+	Hostname      string            `yaml:"hostname,omitempty"`
 	ContainerName string            `yaml:"container_name,omitempty"`
 	Restart       string            `yaml:"restart,omitempty"`
 	Ports         []string          `yaml:"ports,omitempty"`
@@ -158,6 +168,7 @@ func toComposeService(spec runtime.ServiceSpec) composeService {
 	service := composeService{
 		Image:         spec.Image,
 		Platform:      spec.Platform,
+		Hostname:      spec.Hostname,
 		ContainerName: spec.ContainerName,
 		Restart:       spec.Restart,
 		Environment:   spec.Environment,
@@ -234,12 +245,16 @@ func mergeEnvAssets(items []runtime.AssetSpec) (string, error) {
 	return strings.Join(lines, "\n") + "\n", nil
 }
 
-func mergeScriptAssets(items []runtime.AssetSpec, fallback string) string {
+func mergeScriptAssets(containerEngine string, items []runtime.AssetSpec, fallback string) string {
+	if containerEngine == "" {
+		containerEngine = defaultContainerEngine
+	}
 	var builder strings.Builder
 	builder.WriteString("#!/usr/bin/env bash\n")
 	builder.WriteString("set -euo pipefail\n\n")
 	builder.WriteString("ROOT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n")
 	builder.WriteString("cd \"$ROOT_DIR\"\n\n")
+	builder.WriteString(fmt.Sprintf("CONTAINER_ENGINE=\"${ZYGARDE_CONTAINER_ENGINE:-%s}\"\n\n", containerEngine))
 	builder.WriteString("if [ -f .env ]; then\n")
 	builder.WriteString("    set -a\n")
 	builder.WriteString("    . ./.env\n")

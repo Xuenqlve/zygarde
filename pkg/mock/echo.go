@@ -103,7 +103,7 @@ func (s *echoSpec) BuildRuntimeContexts(runtimeType runtime.EnvironmentType) ([]
 				{
 					Name:      "mock-check",
 					PathKey:   "check_script",
-					Content:   "docker compose ps\n",
+					Content:   "\"$CONTAINER_ENGINE\" compose ps\n",
 					Mode:      0o755,
 					MergeMode: runtime.AssetMergeScript,
 				},

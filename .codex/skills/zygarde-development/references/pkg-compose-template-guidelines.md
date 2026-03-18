@@ -165,6 +165,101 @@
 - 不允许静默回退到其他版本
 - 版本矩阵更新时，应同步更新文档与最低验证用例
 
+## 用户帮助文档规范
+
+每新增或补齐一个 Compose 版 `pkg/<middleware>/<template>` 能力时，必须同步补充一份面向用户的帮助文档。
+
+推荐落点：
+
+- `docs/<middleware>.md`
+
+例如：
+
+- `pkg/mysql/single.go` 对应 `docs/mysql.md`
+- 后续 `pkg/redis/single.go` 对应 `docs/redis.md`
+
+约束如下：
+
+- 文档面向 Zygarde 使用者，不面向 AI、实现者或 review 过程
+- 不要写“当前已实现 / 后续预留 / 内部实现来源 / 给 AI 的说明”这类研发流水账
+- 文档应按 template 维度清晰区分，避免把 `single` 的参数误写成整个 middleware 的通用参数
+- 若同一 middleware 存在多个 template，应在同一文档中分章节描述，或在确认更清晰时拆成独立文档，但必须明确边界
+- 文档中的参数说明必须以当前真实实现为准，不提前描述未支持字段
+- 当默认值、支持版本、示例或固定行为变化时，文档必须同步更新
+
+推荐章节：
+
+1. 标题
+2. 适用范围
+3. 最小示例
+4. 参数说明
+5. 版本说明
+6. 固定行为
+7. 推荐写法
+8. 使用建议
+
+其中“参数说明”建议至少包含四列：
+
+- 变量名
+- 变量介绍
+- 默认值
+- 可选值
+
+写作要求：
+
+- 标题直接体现用户要使用的能力，例如 `MySQL Single`
+- `适用范围` 直接说明 `middleware`、`template`、`environmentType`
+- `参数说明` 只写用户可配置字段，例如 `service_name`、`container_name`、`image`、`data_dir`、`port`、`version`
+- `固定行为` 用于说明当前实现中写死但用户不可配置的行为，例如固定容器端口、固定挂载路径、固定健康检查方式
+- 示例应可直接作为 `zygarde.yaml` 片段参考，不写伪代码
+- 语言保持帮助文档风格，优先清晰、直接、可查阅
+
+## Compose 集成测试规范
+
+每新增或补齐一个 Compose 版 `pkg/<middleware>/<template>` 用户可运行能力时，应同步评估并补充 `test/create/` 下对应的集成测试。
+
+推荐落点：
+
+- `test/create/mysql_test.go`
+- `test/create/redis_test.go`
+- `test/create/mongodb_test.go`
+
+约束如下：
+
+- 测试目标是验证用户主链路，而不是重复验证某个 executor 内部细节
+- 测试命名优先围绕用户命令语义，例如 `TestMySQLSingleUpDoctorDown`
+- 测试口径优先采用 `up -> doctor -> down`
+- `doctor` 用于验证当前环境检查脚本可通过，`down` 用于验证运行资源与工作目录可回收
+- 测试默认应优先按“当前目录环境”工作，不要求用户显式传 `EnvironmentID`
+- 端口冲突能力已由独立单测覆盖时，create 集成测试优先使用显式可用端口，避免把多个问题耦合进一个场景
+- 测试失败时必须具备兜底回收，避免残留容器、网络或工作目录
+
+推荐结构：
+
+1. 准备测试上下文
+2. 生成该中间件专属 blueprint
+3. 执行 `up`
+4. 校验当前目录环境标记
+5. 校验 environment 元数据与 runtime artifact
+6. 校验 bundle 关键文件存在
+7. 执行 `status`
+8. 轮询执行 `doctor` 直到通过或超时
+9. 执行 `down`
+10. 校验环境状态与工作目录清理结果
+
+复用要求：
+
+- 通用测试基建优先沉淀到 `test/create/base.go`
+- `base.go` 负责容器引擎检查、测试工作目录切换、`up/status/doctor/down` 公共流程、环境标记校验、artifact 校验、doctor 重试、兜底清理和日志输出
+- 单个中间件测试文件只保留 blueprint 生成、场景参数和中间件私有断言
+- 不要在每个 `test/create/<middleware>_test.go` 中重复实现相同的环境准备和回收逻辑
+
+日志要求：
+
+- 测试应输出关键阶段日志，例如环境准备、`up` 结果、当前目录标记、元数据校验、`doctor` 重试、`down` 回收
+- 日志应帮助定位失败阶段，但不要打印与断言无关的大量噪音
+- 对启动早期可能出现的瞬态失败，可在重试日志中保留摘要，避免误判为最终失败
+
 ## Compose 版模块必须承担的职责
 
 一个 `pkg/<middleware>/<template>.go` 的 Compose 版实现，必须明确完成以下工作：
@@ -208,6 +303,13 @@
 - 补齐 Compose runtime 需要的通用值键
 - 补齐默认 `version`
 - 完成字段类型归一化
+
+对于端口等易冲突字段，补充以下规则：
+
+- 若用户未显式配置 `port`，可通过 `internal/tool/*` 中的单任务级全局分发工具，从默认端口开始递增选择当前可用端口
+- 若用户显式配置了 `port`，应只做合法性与可用性校验，不要自动改写为其他端口
+- 端口可用性检查应在 `Normalize` 或 `Configure` 阶段完成，不要拖到 Render 或 Apply 阶段
+- 这类分发工具的目标是减少默认端口冲突导致的启动报错，不要求承担跨任务状态管理
 
 以 Compose 版常见字段为例，优先通过 `internal/runtime/compose` 中定义的常量访问：
 

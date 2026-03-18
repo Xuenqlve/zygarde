@@ -9,6 +9,7 @@ import (
 	"github.com/xuenqlve/zygarde/internal/runtime"
 	runtimecompose "github.com/xuenqlve/zygarde/internal/runtime/compose"
 	tpl "github.com/xuenqlve/zygarde/internal/template"
+	"github.com/xuenqlve/zygarde/internal/tool"
 )
 
 const (
@@ -26,7 +27,10 @@ func init() {
 
 // Register registers MySQL specs into the provided registry.
 func Register(envType runtime.EnvironmentType) error {
-	return tpl.RegisterMiddleware(tpl.NewMiddlewareRuntimeKey(middlewareName, singleTemplate, envType), NewSingleSpec())
+	if err := tpl.RegisterMiddleware(tpl.NewMiddlewareRuntimeKey(middlewareName, singleTemplate, envType), NewSingleSpec()); err != nil {
+		return err
+	}
+	return tpl.RegisterMiddleware(tpl.NewMiddlewareRuntimeKey(middlewareName, masterSlaveTemplate, envType), NewMasterSlaveSpec())
 }
 
 // NewSingleSpec returns the default MySQL single-node middleware spec.
@@ -56,6 +60,7 @@ func (s *singleSpec) Normalize(input tpl.ServiceInput, index int) (model.Bluepri
 		name = tpl.DefaultServiceName(s.Middleware(), index)
 	}
 
+	userSpecifiedPort := hasValue(input.Values, runtimecompose.ValuePort)
 	values := tpl.MergeValues(s.DefaultValues(), input.Values)
 	values[runtimecompose.ValueServiceName] = defaultStringValue(values[runtimecompose.ValueServiceName], name)
 	values[runtimecompose.ValueContainerName] = defaultStringValue(values[runtimecompose.ValueContainerName], name)
@@ -67,9 +72,23 @@ func (s *singleSpec) Normalize(input tpl.ServiceInput, index int) (model.Bluepri
 	values[runtimecompose.ValueImage] = defaultStringValue(values[runtimecompose.ValueImage], imageForVersion(version))
 	values[runtimecompose.ValueDataDir] = defaultStringValue(values[runtimecompose.ValueDataDir], fmt.Sprintf("./data/%s", name))
 
-	port, err := normalizePort(values[runtimecompose.ValuePort])
-	if err != nil {
-		return model.BlueprintService{}, fmt.Errorf("normalize mysql single port: %w", err)
+	var (
+		port int
+		err  error
+	)
+	if userSpecifiedPort {
+		port, err = normalizePort(values[runtimecompose.ValuePort])
+		if err != nil {
+			return model.BlueprintService{}, fmt.Errorf("normalize mysql single port: %w", err)
+		}
+		if err := tool.ReservePort(port); err != nil {
+			return model.BlueprintService{}, fmt.Errorf("normalize mysql single port: %w", err)
+		}
+	} else {
+		port, err = tool.AllocatePort(defaultPort)
+		if err != nil {
+			return model.BlueprintService{}, fmt.Errorf("normalize mysql single port: %w", err)
+		}
 	}
 	values[runtimecompose.ValuePort] = port
 
@@ -99,8 +118,11 @@ func (s *singleSpec) Configure(input tpl.ServiceInput, index int) (model.Bluepri
 }
 
 func (s *singleSpec) BuildRuntimeContexts(runtimeType runtime.EnvironmentType) ([]runtime.EnvironmentContext, error) {
-	contexts := make([]runtime.EnvironmentContext, 0, len(s.services))
-	for _, service := range s.services {
+	services := append([]model.BlueprintService(nil), s.services...)
+	s.services = nil
+
+	contexts := make([]runtime.EnvironmentContext, 0, len(services))
+	for _, service := range services {
 		if err := s.Validate(service); err != nil {
 			return nil, err
 		}
@@ -190,7 +212,7 @@ func (s *singleSpec) BuildRuntimeContexts(runtimeType runtime.EnvironmentType) (
 					Name:    "mysql-check",
 					PathKey: "check_script",
 					Content: fmt.Sprintf(
-						"docker exec %s mysql -uroot \"-p${%s_ROOT_PASSWORD}\" -e \"SELECT 1;\"\n",
+						"\"$CONTAINER_ENGINE\" exec %s mysql -uroot \"-p${%s_ROOT_PASSWORD}\" -e \"SELECT 1;\"\n",
 						containerName,
 						envKeyPrefix,
 					),
@@ -275,6 +297,14 @@ func defaultStringValue(value any, fallback string) string {
 		return fallback
 	}
 	return current
+}
+
+func hasValue(values map[string]any, key string) bool {
+	if values == nil {
+		return false
+	}
+	_, ok := values[key]
+	return ok
 }
 
 func (*singleSpec) DefaultValues() map[string]any {

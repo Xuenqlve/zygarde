@@ -13,19 +13,23 @@ import (
 	"github.com/xuenqlve/zygarde/internal/runtime"
 )
 
-const dockerCommand = "docker"
+const defaultContainerEngine = "docker"
 
 // Executor executes Docker Compose lifecycle commands.
 type Executor struct {
-	runner CommandRunner
+	runner          CommandRunner
+	containerEngine string
 }
 
 // NewExecutor creates a compose deployment executor.
-func NewExecutor(runner CommandRunner) Executor {
+func NewExecutor(containerEngine string, runner CommandRunner) Executor {
+	if containerEngine == "" {
+		containerEngine = defaultContainerEngine
+	}
 	if runner == nil {
 		runner = execRunner{}
 	}
-	return Executor{runner: runner}
+	return Executor{runner: runner, containerEngine: containerEngine}
 }
 
 // Apply executes the generated build.sh entrypoint for one compose bundle.
@@ -82,6 +86,22 @@ func (e Executor) Status(ctx context.Context, plan runtime.LifecyclePlan) (*runt
 		Status:    status,
 		Message:   message,
 		Endpoints: endpoints,
+	}, nil
+}
+
+// Doctor executes the generated check.sh entrypoint for one compose bundle.
+func (e Executor) Doctor(ctx context.Context, plan runtime.LifecyclePlan) (*runtime.OperationResult, error) {
+	script, err := resolveLifecycleScript(plan.WorkspaceDir, "check.sh")
+	if err != nil {
+		return nil, fmt.Errorf("compose doctor: %w", err)
+	}
+	output, err := e.runner.Run(ctx, plan.WorkspaceDir, "/bin/sh", script)
+	if err != nil {
+		return nil, fmt.Errorf("compose doctor: %w: %s", err, strings.TrimSpace(output))
+	}
+	return &runtime.OperationResult{
+		Message: strings.TrimSpace(fmt.Sprintf("compose doctor passed for %s: %s", plan.Environment.Name, strings.TrimSpace(output))),
+		Changed: false,
 	}, nil
 }
 
@@ -180,7 +200,7 @@ func (e Executor) runCompose(ctx context.Context, plan runtime.LifecyclePlan, ar
 	if err != nil {
 		return "", fmt.Errorf("resolve compose workdir: %w", err)
 	}
-	return e.runner.Run(ctx, workdir, dockerCommand, append(baseArgs, args...)...)
+	return e.runner.Run(ctx, workdir, e.containerEngine, append(baseArgs, args...)...)
 }
 
 func composeBaseArgs(plan runtime.LifecyclePlan) ([]string, error) {
@@ -199,7 +219,7 @@ func composeBaseArgs(plan runtime.LifecyclePlan) ([]string, error) {
 }
 
 func parsePSOutput(output string) ([]psEntry, error) {
-	trimmed := strings.TrimSpace(output)
+	trimmed := strings.TrimSpace(normalizePSOutput(output))
 	if trimmed == "" {
 		return nil, nil
 	}
@@ -231,6 +251,52 @@ func parsePSOutput(output string) ([]psEntry, error) {
 		}
 	}
 	return entries, nil
+}
+
+func stripANSI(value string) string {
+	var builder strings.Builder
+	builder.Grow(len(value))
+
+	for i := 0; i < len(value); i++ {
+		if value[i] != 0x1b {
+			builder.WriteByte(value[i])
+			continue
+		}
+		i++
+		if i >= len(value) || value[i] != '[' {
+			continue
+		}
+		for i+1 < len(value) {
+			i++
+			ch := value[i]
+			if ch >= '@' && ch <= '~' {
+				break
+			}
+		}
+	}
+
+	return builder.String()
+}
+
+func normalizePSOutput(value string) string {
+	cleaned := stripANSI(value)
+	lines := strings.Split(cleaned, "\n")
+	filtered := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "{") || strings.HasPrefix(line, "[") {
+			filtered = append(filtered, line)
+		}
+	}
+
+	if len(filtered) == 0 {
+		return cleaned
+	}
+	return strings.Join(filtered, "\n")
 }
 
 func mapEnvironmentStatus(entries []psEntry) model.EnvironmentStatus {
@@ -285,4 +351,23 @@ func buildEndpoints(entries []psEntry) []model.Endpoint {
 		}
 	}
 	return endpoints
+}
+
+func resolveLifecycleScript(workdir, name string) (string, error) {
+	if workdir == "" {
+		return "", fmt.Errorf("workspace dir is required")
+	}
+	scriptPath := filepath.Join(workdir, name)
+	info, err := os.Stat(scriptPath)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("%s is a directory", scriptPath)
+	}
+	absPath, err := filepath.Abs(scriptPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", name, err)
+	}
+	return absPath, nil
 }

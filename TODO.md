@@ -143,10 +143,11 @@
 - [x] 引入 runtime artifact 持久化，承接 `PrimaryFile / WorkspaceDir / ProjectName` 等 runtime 私有信息
 - [x] 为 `pkg/*` Compose 版实现补充规范文档，并建立 `compose-stack -> docker/目录事实 -> pkg 单实现入口` 的设计约束
 - [x] `config/zygarde.yaml` 已可启动两个 MySQL single，并支持 `v5.7 + v8.0` 混合版本
+- [x] 新增 `internal/tool/number_dispenser.go` 单任务级端口分发器，用于默认端口冲突规避与显式端口校验
 
 ### 下一阶段重点：12 个中间件的 Compose type 实现
 
-目标：参考 `compose-stack` 与 `docker/<middleware>/<scenario>_<version>/` 已验证资产，将 12 个中间件的 Compose 版能力统一收敛到 `pkg/*` 的单实现入口中。
+目标：参考 `compose-stack` 与 `docker/<middleware>/<scenario>_<version>/` 已验证资产，将 12 个中间件、26 个部署模板的 Compose 版能力统一收敛到 `pkg/*` 的单实现入口中。
 
 约束：
 
@@ -156,21 +157,145 @@
 
 #### Compose type 中间件 TODO
 
-- [ ] MySQL：完成 `single / master-slave` Compose type，覆盖 `v5.7 / v8.0`
-- [ ] Redis：完成 `single / master-slave / cluster` Compose type，覆盖 `v6.2 / v7.4`
-- [ ] MongoDB：完成 `single / replica-set / sharded` Compose type，覆盖 `v6.0 / v7.0`
-- [ ] PostgreSQL：完成 `single / master-slave` Compose type，覆盖 `v16 / v17`
-- [ ] RabbitMQ：完成 `single / cluster` Compose type，覆盖 `v4.2`
-- [ ] Kafka：完成 `single / cluster` Compose type，覆盖 `v4.2`
-- [ ] TiDB：完成 `single / cluster` Compose type，覆盖 `v6.7`
-- [ ] etcd：完成 `single / cluster` Compose type，覆盖 `v3.6`
-- [ ] Consul：完成 `single / cluster` Compose type，覆盖 `v1.20`
-- [ ] ClickHouse：完成 `single / cluster` Compose type，覆盖 `v24 / v25`
-- [ ] ZooKeeper：完成 `single / cluster` Compose type，覆盖 `v3.8 / v3.9`
-- [ ] Elasticsearch：完成 `single / cluster` Compose type，覆盖 `v8.18 / v8.19`
+说明：
+
+- TODO 按 `middleware + template` 维度维护
+- `version` 是同一 template 的支持参数，不单独拆成多个待办项
+- 每完成一个 template，需同步交付 `pkg + docs + test/create`
+
+当前整体进度：
+
+- 已完成：`26 / 26`（`mysql/single`、`mysql/master-slave`、`redis/single`、`redis/master-slave`、`redis/cluster`、`mongodb/single`、`mongodb/replica-set`、`mongodb/sharded`、`postgresql/single`、`postgresql/master-slave`、`rabbitmq/single`、`rabbitmq/cluster`、`kafka/single`、`kafka/cluster`、`tidb/single`、`tidb/cluster`、`etcd/single`、`etcd/cluster`、`consul/single`、`consul/cluster`、`clickhouse/single`、`clickhouse/cluster`、`zookeeper/single`、`zookeeper/cluster`、`elasticsearch/single`、`elasticsearch/cluster`）
+- 进行中：`0 / 26`
+- 未开始：`0 / 26`
+
+MySQL（支持版本：`v5.7 / v8.0`）
+
+- [x] `single`
+- [x] `master-slave`
+
+Redis（支持版本：`v6.2 / v7.4`）
+
+- [x] `single`
+- [x] `master-slave`
+- [x] `cluster`
+
+MongoDB（支持版本：`v6.0 / v7.0`）
+
+- [x] `single`
+- [x] `replica-set`
+- [x] `sharded`
+
+PostgreSQL（支持版本：`v16 / v17`）
+
+- [x] `single`
+- [x] `master-slave`
+
+RabbitMQ（支持版本：`v4.2`）
+
+- [x] `single`
+- [x] `cluster`
+
+Kafka（支持版本：`v4.2`）
+
+- [x] `single`
+- [x] `cluster`
+
+TiDB（支持版本：`v6.7`）
+
+- [x] `single`
+- [x] `cluster`
+
+etcd（支持版本：`v3.6`）
+
+- [x] `single`
+- [x] `cluster`
+
+Consul（支持版本：`v1.20`）
+
+- [x] `single`
+- [x] `cluster`
+
+ClickHouse（支持版本：`v24 / v25`）
+
+- [x] `single`
+- [x] `cluster`
+
+ZooKeeper（支持版本：`v3.8 / v3.9`）
+
+- [x] `single`
+- [x] `cluster`
+
+Elasticsearch（支持版本：`v8.18 / v8.19`）
+
+- [x] `single`
+- [x] `cluster`
 
 ### 后续追加原则
 
 - 当前部分作为项目主流程 TODO。
 - 后续可以围绕某个模块或子流程追加更细的子 TODO。
 - 子 TODO 不应破坏这里定义的主流程顺序和模块边界。
+
+---
+
+## 子 TODO：mysql/single 全流程测试与 lifecycle/doctor 梳理
+
+### 背景
+
+- 当前 `mysql/single` 已基本跑通主链路，但缺少覆盖完整 create 生命周期的专项测试。
+- `Create` 当前已经执行了 `Apply`，实际语义是“创建并启动环境”，需要评估这是否符合最终设计。
+- 缺少一个统一的健康检查入口来判断生成配置和 Docker 实际运行状态是否正确。
+- 测试完成后需要明确资源回收路径，避免残留环境和容器。
+
+### 目标
+
+- 为 `mysql/single` 补齐完整的 create 生命周期测试。
+- 明确 `Create / Start / Stop / Destroy` 的职责边界。
+- 设计并落地 `doctor` 检查链路。
+- 保证测试过程中的环境和 Docker 资源可回收。
+
+### 范围
+
+- 会改：
+  - `test/create/mysql_test.go`
+  - `internal/app`
+  - `internal/cli`
+  - `internal/coordinator`
+  - 可能涉及 `internal/runtime` / `internal/deployment/compose`
+- 本轮先不做：
+  - 其他中间件测试
+  - K8s 相关能力
+  - 大范围重构 create 主流程
+
+### TODO
+
+#### P0
+
+- [ ] 梳理 `Create` 当前语义，确认它是否应继续保持“create 并启动环境”
+- [x] 为 `mysql/single` 设计 `test/create/mysql_test.go` 的完整测试方案
+- [ ] 明确测试回收策略，确保失败场景也能执行 `destroy`
+- [ ] 补齐 `internal/app/app.go` 的测试使用路径，确保 `Create / Stop / Start / Destroy` 能串成完整生命周期
+- [x] 设计并实现 `doctor` 命令，一期通过执行环境目录下 `check.sh` 完成检查
+- [x] 设计并实现 `down` 命令，语义对齐 `docker compose down`
+- [x] 明确 `down` 与现有 `destroy` 的关系，优先复用当前 `destroy + cleanup` 链路
+- [x] 调整 `mysql_test.go` 测试口径为 `up -> doctor -> down`
+
+#### P1
+
+- [ ] 落地 `test/create/mysql_test.go`，覆盖 `create -> verify -> stop -> start -> destroy`
+- [x] 落地 `test/create/mysql_test.go`，覆盖 `up -> doctor -> down`
+- [ ] 在测试中校验生成的环境元数据、runtime artifact、Compose bundle 和 MySQL 实际可访问性
+- [ ] 评估并补充 `start` 的真实恢复验证，确认 stop 后可以重新启动成功
+- [ ] 评估 `Create` 与 `Start` 的职责是否需要拆分或重命名
+- [x] 在 `app / coordinator / runtime / deployment/compose` 打通 `doctor`
+- [x] 在 `app / coordinator / runtime / deployment/compose` 打通 `down`
+- [x] 为 `mysql/single` 落地全流程测试，覆盖 `up -> doctor -> down`
+- [ ] 评估 `stop / destroy` 是否继续保留为用户命令，还是仅保留内部能力
+
+#### P2
+
+- [ ] 设计 `doctor` 命令的职责边界和输出格式
+- [ ] 在 `app/coordinator/runtime` 上补 `doctor` 主链路
+- [ ] 让 `doctor` 同时检查配置正确性和 Docker 运行态正确性
+- [ ] 为 `doctor` 补基础测试和 CLI 入口

@@ -77,6 +77,7 @@ func (c ComposeContext) ApplyInput() ApplyInput {
 type ServiceSpec struct {
 	Image         string
 	Platform      string
+	Hostname      string
 	ContainerName string
 	Restart       string
 	Environment   map[string]string

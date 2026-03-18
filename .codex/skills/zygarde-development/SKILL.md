@@ -31,8 +31,10 @@ Zygarde 项目的统一开发 skill。
 3. 产出简洁的开发方案；如果存在明显分歧，列出可选方案与权衡。
 4. 按 [todo-template.md](references/todo-template.md) 维护 TODO。
 5. 实现时按 TODO 分步推进，每一步都确认落点是否正确。
-6. 完成后执行必要验证，至少覆盖编译、测试或目录结果检查。
-7. 总结改动并提交。
+6. 若交付涉及 `pkg/<middleware>` 的用户可配置能力，同步更新 `docs/` 下对应帮助文档。
+7. 若交付涉及 Compose 版中间件可运行能力，同步评估并补充 `test/create/` 下对应集成测试。
+8. 完成后执行必要验证，至少覆盖编译、测试或目录结果检查。
+9. 总结改动并提交。
 
 ## 目录落点规则
 
@@ -90,6 +92,13 @@ Zygarde 项目的统一开发 skill。
 - 对同一个 middleware/template 的多个版本目录，应在 `pkg/*` 中收敛为单一实现入口，通过 `version` 控制差异，而不是按版本复制多个方法。
 - `docker/<middleware>/<scenario>_<version>/` 应被视为已验证行为与版本差异的事实来源；`pkg/*` 负责对这些差异做抽象收敛。
 
+关于一次性工具与任务级全局状态，当前建议遵守：
+- 当前项目可按“一次执行完成即退出”的单任务 CLI 工具来设计，不必默认按长生命周期服务建模。
+- 对端口分发、编号分配等一次性辅助能力，可以放在 `internal/tool/*` 中实现为“单任务级全局工具”。
+- 这类工具应在任务开始时初始化，在本次任务内复用，不要求为跨任务状态持久化设计。
+- 这类工具只用于减少默认值冲突和启动时报错，不承担长期状态管理职责。
+- 若用户显式配置了值，应以校验为主，不要静默改写用户输入；若用户未配置，工具才负责补默认值。
+
 关于 `EnvironmentContext` 的增量设计，当前建议遵守：
 - 先定义最小接口，再用主流程反推字段，不提前设计大而全公共结构。
 - 如果 `Prepare` 缺字段，只补 `PrepareInput`。
@@ -133,6 +142,7 @@ Zygarde 项目的统一开发 skill。
 ## 参考资料
 
 - 目录与架构边界： [architecture.md](references/architecture.md)
+- pkg 开发总览： [pkg-development-summary.md](references/pkg-development-summary.md)
 - pkg 实现规范： [pkg-middleware-guidelines.md](references/pkg-middleware-guidelines.md)
 - pkg Compose 模板规范： [pkg-compose-template-guidelines.md](references/pkg-compose-template-guidelines.md)
 - runtime driver 规则： [runtime-driver-guidelines.md](references/runtime-driver-guidelines.md)

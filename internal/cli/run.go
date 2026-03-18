@@ -22,12 +22,18 @@ func Run(ctx context.Context, args []string, stdout io.Writer) error {
 	switch args[0] {
 	case "create":
 		return runCreate(ctx, args[1:], stdout)
+	case "up":
+		return runUp(ctx, args[1:], stdout)
 	case "status":
 		return runStatus(ctx, args[1:], stdout)
+	case "doctor":
+		return runDoctor(ctx, args[1:], stdout)
 	case "start":
 		return runStart(ctx, args[1:], stdout)
 	case "stop":
 		return runStop(ctx, args[1:], stdout)
+	case "down":
+		return runDown(ctx, args[1:], stdout)
 	case "destroy":
 		return runDestroy(ctx, args[1:], stdout)
 	default:
@@ -36,7 +42,29 @@ func Run(ctx context.Context, args []string, stdout io.Writer) error {
 }
 
 func runCreate(ctx context.Context, args []string, stdout io.Writer) error {
-	fs := flag.NewFlagSet("create", flag.ContinueOnError)
+	return runBlueprintAction(ctx, "create", args, stdout, func(application *app.App, blueprintFile string, envType runtime.EnvironmentType) (*appResult, error) {
+		result, err := application.Create(ctx, blueprintFile, envType)
+		if err != nil {
+			return nil, err
+		}
+		return &appResult{Message: result.Message}, nil
+	})
+}
+
+func runUp(ctx context.Context, args []string, stdout io.Writer) error {
+	return runBlueprintAction(ctx, "up", args, stdout, func(application *app.App, blueprintFile string, envType runtime.EnvironmentType) (*appResult, error) {
+		result, err := application.Up(ctx, blueprintFile, envType)
+		if err != nil {
+			return nil, err
+		}
+		return &appResult{Message: result.Message}, nil
+	})
+}
+
+type blueprintAction func(application *app.App, blueprintFile string, envType runtime.EnvironmentType) (*appResult, error)
+
+func runBlueprintAction(ctx context.Context, name string, args []string, stdout io.Writer, action blueprintAction) error {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
 	var blueprintFile string
@@ -61,7 +89,7 @@ func runCreate(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 
-	result, err := application.Create(ctx, blueprintFile, runtime.EnvironmentType(envType))
+	result, err := action(application, blueprintFile, runtime.EnvironmentType(envType))
 	if err != nil {
 		return err
 	}
@@ -73,6 +101,16 @@ func runCreate(ctx context.Context, args []string, stdout io.Writer) error {
 func runStatus(ctx context.Context, args []string, stdout io.Writer) error {
 	return runEnvironmentAction(ctx, "status", args, stdout, func(application *app.App, environmentID string) (*appResult, error) {
 		result, err := application.Status(ctx, environmentID)
+		if err != nil {
+			return nil, err
+		}
+		return &appResult{Message: result.Message}, nil
+	})
+}
+
+func runDoctor(ctx context.Context, args []string, stdout io.Writer) error {
+	return runEnvironmentAction(ctx, "doctor", args, stdout, func(application *app.App, environmentID string) (*appResult, error) {
+		result, err := application.Doctor(ctx, environmentID)
 		if err != nil {
 			return nil, err
 		}
@@ -93,6 +131,16 @@ func runStart(ctx context.Context, args []string, stdout io.Writer) error {
 func runStop(ctx context.Context, args []string, stdout io.Writer) error {
 	return runEnvironmentAction(ctx, "stop", args, stdout, func(application *app.App, environmentID string) (*appResult, error) {
 		result, err := application.Stop(ctx, environmentID)
+		if err != nil {
+			return nil, err
+		}
+		return &appResult{Message: result.Message}, nil
+	})
+}
+
+func runDown(ctx context.Context, args []string, stdout io.Writer) error {
+	return runEnvironmentAction(ctx, "down", args, stdout, func(application *app.App, environmentID string) (*appResult, error) {
+		result, err := application.Down(ctx, environmentID)
 		if err != nil {
 			return nil, err
 		}
@@ -142,9 +190,6 @@ func runEnvironmentAction(ctx context.Context, name string, args []string, stdou
 	}
 	if environmentID == "" && fs.NArg() > 0 {
 		environmentID = fs.Arg(0)
-	}
-	if environmentID == "" {
-		return fmt.Errorf("environment id is required")
 	}
 
 	application, err := app.New()

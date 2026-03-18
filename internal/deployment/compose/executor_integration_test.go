@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xuenqlve/zygarde/internal/config"
 	"github.com/xuenqlve/zygarde/internal/model"
 	"github.com/xuenqlve/zygarde/internal/runtime"
 )
@@ -19,11 +20,12 @@ func TestExecutorWithMySQLSingleV57(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skip integration test in short mode")
 	}
-	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skipf("docker is required: %v", err)
+	containerEngine := config.Default().ContainerEngine
+	if _, err := exec.LookPath(containerEngine); err != nil {
+		t.Skipf("%s is required: %v", containerEngine, err)
 	}
-	if err := exec.Command("docker", "compose", "version").Run(); err != nil {
-		t.Skipf("docker compose is required: %v", err)
+	if output, err := exec.Command(containerEngine, "compose", "version").CombinedOutput(); err != nil {
+		t.Skipf("%s compose is required: %v, output: %s", containerEngine, err, strings.TrimSpace(string(output)))
 	}
 
 	projectName := fmt.Sprintf("zygarde-it-%d", time.Now().UnixNano())
@@ -43,7 +45,7 @@ func TestExecutorWithMySQLSingleV57(t *testing.T) {
 		ProjectName:  projectName,
 		PrimaryFile:  composeFile,
 	}
-	executor := NewExecutor(nil)
+	executor := NewExecutor(containerEngine, nil)
 
 	t.Logf("fixture: mysql single v5.7")
 	t.Logf("workspace: %s", workspaceDir)
@@ -54,7 +56,7 @@ func TestExecutorWithMySQLSingleV57(t *testing.T) {
 	t.Logf("mysql port: %d", mysqlPort)
 
 	t.Cleanup(func() {
-		t.Log("cleanup: execute docker compose down and remove workspace")
+		t.Log("cleanup: execute compose down and remove workspace")
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		_, _ = executor.Destroy(ctx, lifecyclePlan)
@@ -64,7 +66,7 @@ func TestExecutorWithMySQLSingleV57(t *testing.T) {
 	applyCtx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 
-	t.Log("step apply: execute docker compose up -d")
+	t.Log("step apply: execute compose up -d")
 	applyResult, err := executor.Apply(applyCtx, runtime.ApplyPlan{
 		Environment:  env,
 		WorkspaceDir: workspaceDir,
@@ -81,7 +83,7 @@ func TestExecutorWithMySQLSingleV57(t *testing.T) {
 	}
 	t.Logf("apply result: %s", applyResult.Message)
 
-	t.Log("verify apply: use executor.Status -> docker compose ps -a --format json and expect running")
+	t.Log("verify apply: use executor.Status -> compose ps -a --format json and expect running")
 	statusResult := waitForStatus(t, applyCtx, executor, lifecyclePlan, model.EnvironmentStatusRunning, 3*time.Second)
 	if len(statusResult.Endpoints) == 0 {
 		t.Fatal("expected endpoints after apply")
@@ -89,8 +91,8 @@ func TestExecutorWithMySQLSingleV57(t *testing.T) {
 	t.Logf("status after apply: %s", statusResult.Message)
 	t.Logf("endpoints after apply: %+v", statusResult.Endpoints)
 
-	t.Log("verify mysql connectivity: execute docker exec <container> mysql -uroot -p... -e 'SELECT 1;'")
-	if err := waitForMySQLQuery(applyCtx, containerName, rootPassword); err != nil {
+	t.Log("verify mysql connectivity: execute container engine exec <container> mysql -uroot -p... -e 'SELECT 1;'")
+	if err := waitForMySQLQuery(applyCtx, containerEngine, containerName, rootPassword); err != nil {
 		t.Fatalf("mysql connectivity check failed: %v", err)
 	}
 	t.Log("mysql connectivity check passed")
@@ -98,7 +100,7 @@ func TestExecutorWithMySQLSingleV57(t *testing.T) {
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer stopCancel()
 
-	t.Log("step stop: execute docker compose stop")
+	t.Log("step stop: execute compose stop")
 	stopResult, err := executor.Stop(stopCtx, lifecyclePlan)
 	if err != nil {
 		t.Fatalf("stop: %v", err)
@@ -107,14 +109,14 @@ func TestExecutorWithMySQLSingleV57(t *testing.T) {
 		t.Fatal("expected stop to report changed")
 	}
 	t.Logf("stop result: %s", stopResult.Message)
-	t.Log("verify stop: use executor.Status -> docker compose ps -a --format json and expect stopped")
+	t.Log("verify stop: use executor.Status -> compose ps -a --format json and expect stopped")
 	stoppedStatus := waitForStatus(t, stopCtx, executor, lifecyclePlan, model.EnvironmentStatusStopped, 2*time.Second)
 	t.Logf("status after stop: %s", stoppedStatus.Message)
 
 	destroyCtx, destroyCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer destroyCancel()
 
-	t.Log("step destroy: execute docker compose down")
+	t.Log("step destroy: execute compose down")
 	destroyResult, err := executor.Destroy(destroyCtx, lifecyclePlan)
 	if err != nil {
 		t.Fatalf("destroy: %v", err)
@@ -123,7 +125,7 @@ func TestExecutorWithMySQLSingleV57(t *testing.T) {
 		t.Fatal("expected destroy to report changed")
 	}
 	t.Logf("destroy result: %s", destroyResult.Message)
-	t.Log("verify destroy: use executor.Status -> docker compose ps -a --format json and expect destroyed")
+	t.Log("verify destroy: use executor.Status -> compose ps -a --format json and expect destroyed")
 	destroyedStatus := waitForStatus(t, destroyCtx, executor, lifecyclePlan, model.EnvironmentStatusDestroyed, 2*time.Second)
 	t.Logf("status after destroy: %s", destroyedStatus.Message)
 
@@ -167,7 +169,7 @@ func prepareMySQLSingleFixture(t *testing.T, workspaceDir, containerName string,
 	}
 
 	buildScript := filepath.Join(workspaceDir, "build.sh")
-	buildContent := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\nROOT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\ncd \"$ROOT_DIR\"\nif [ -f .env ]; then\n    set -a\n    . ./.env\n    set +a\nfi\n\ndocker compose -p %q -f docker-compose.yml up -d\n", containerName[:len(containerName)-len("-mysql")])
+	buildContent := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\nROOT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\ncd \"$ROOT_DIR\"\nCONTAINER_ENGINE=\"${ZYGARDE_CONTAINER_ENGINE:-%s}\"\nif [ -f .env ]; then\n    set -a\n    . ./.env\n    set +a\nfi\n\n\"$CONTAINER_ENGINE\" compose -p %q -f docker-compose.yml up -d\n", config.Default().ContainerEngine, containerName[:len(containerName)-len("-mysql")])
 	if err := os.WriteFile(buildScript, []byte(buildContent), 0o755); err != nil {
 		t.Fatalf("write build script: %v", err)
 	}
@@ -201,14 +203,14 @@ func waitForStatus(t *testing.T, ctx context.Context, executor Executor, plan ru
 	}
 }
 
-func waitForMySQLQuery(ctx context.Context, containerName, rootPassword string) error {
+func waitForMySQLQuery(ctx context.Context, containerEngine, containerName, rootPassword string) error {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		cmd := exec.CommandContext(
 			ctx,
-			"docker",
+			containerEngine,
 			"exec",
 			containerName,
 			"mysql",

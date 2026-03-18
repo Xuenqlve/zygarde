@@ -120,6 +120,7 @@ type Driver interface {
 	Apply(ctx context.Context, plan ApplyPlan) (*OperationResult, error)
 	PlanLifecycle(ctx context.Context, req BuildLifecycleRequest) (*LifecyclePlan, error)
 	Status(ctx context.Context, plan LifecyclePlan) (*StatusResult, error)
+	Doctor(ctx context.Context, plan LifecyclePlan) (*OperationResult, error)
 	Start(ctx context.Context, plan LifecyclePlan) (*OperationResult, error)
 	Stop(ctx context.Context, plan LifecyclePlan) (*OperationResult, error)
 	Destroy(ctx context.Context, plan LifecyclePlan) (*OperationResult, error)

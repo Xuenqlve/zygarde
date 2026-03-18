@@ -30,10 +30,10 @@ func NewDriver(workspaceRoot string, renderer render.Renderer, executor deployme
 		workspaceRoot = defaultWorkspaceRoot
 	}
 	if renderer == nil {
-		renderer = render.NewComposeRenderer()
+		renderer = render.NewComposeRenderer("")
 	}
 	if executor == nil {
-		executor = deploycompose.NewExecutor(nil)
+		executor = deploycompose.NewExecutor("", nil)
 	}
 	return Driver{
 		workspaceRoot: workspaceRoot,
@@ -167,6 +167,11 @@ func (d Driver) PlanLifecycle(_ context.Context, req runtime.BuildLifecycleReque
 // Status delegates to the compose executor.
 func (d Driver) Status(ctx context.Context, plan runtime.LifecyclePlan) (*runtime.StatusResult, error) {
 	return d.executor.Status(ctx, plan)
+}
+
+// Doctor delegates to the compose executor.
+func (d Driver) Doctor(ctx context.Context, plan runtime.LifecyclePlan) (*runtime.OperationResult, error) {
+	return d.executor.Doctor(ctx, plan)
 }
 
 // Start delegates to the compose executor.

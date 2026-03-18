@@ -11,10 +11,17 @@ import (
 	"github.com/xuenqlve/zygarde/internal/runtime"
 	"github.com/xuenqlve/zygarde/internal/store"
 	"github.com/xuenqlve/zygarde/internal/template"
+	"github.com/xuenqlve/zygarde/internal/tool"
 )
 
-// CreateRequest contains the minimum input for the create flow.
+// CreateRequest contains the minimum input for the reserved create-only flow.
 type CreateRequest struct {
+	BlueprintFile   string
+	EnvironmentType runtime.EnvironmentType
+}
+
+// UpRequest contains the minimum input for the up flow.
+type UpRequest struct {
 	BlueprintFile   string
 	EnvironmentType runtime.EnvironmentType
 }
@@ -35,8 +42,16 @@ func New(blueprints store.BlueprintStore, environments environment.Store, runtim
 	}
 }
 
-// Create loads the blueprint, normalizes services, renders runtime artifacts, and records the environment metadata.
-func (c Coordinator) Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
+// Create is reserved for the future create-only flow that prepares environment assets without starting runtime.
+func (c Coordinator) Create(_ context.Context, _ CreateRequest) (*CreateResult, error) {
+	return nil, fmt.Errorf("create is reserved for a prepare-only workflow and is not implemented yet")
+}
+
+// Up loads the blueprint, normalizes services, renders runtime artifacts, applies runtime changes, and records the environment metadata.
+func (c Coordinator) Up(ctx context.Context, req UpRequest) (*CreateResult, error) {
+	tool.InitPortDispenser()
+	defer tool.ResetPortDispenser()
+
 	loaded, err := c.blueprints.LoadBlueprint(req.BlueprintFile)
 	if err != nil {
 		return nil, err
@@ -143,6 +158,9 @@ func (c Coordinator) Create(ctx context.Context, req CreateRequest) (*CreateResu
 	}
 
 	return &CreateResult{
+		EnvironmentID: env.ID,
+		WorkspaceDir:  applyPlan.WorkspaceDir,
+		ProjectName:   applyPlan.ProjectName,
 		Message: fmt.Sprintf(
 			"created environment %s for %s with %d service(s), %d runtime context(s), compose file %s, apply result: %s",
 			env.ID,

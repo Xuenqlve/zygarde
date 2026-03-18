@@ -18,7 +18,7 @@ func TestApplyBuildsComposeCommandAndExtractsEndpoints(t *testing.T) {
 			{output: `[{"Service":"mock-1","State":"running","Publishers":[{"URL":"127.0.0.1","PublishedPort":3306,"Protocol":"tcp"}]}]`},
 		},
 	}
-	executor := NewExecutor(runner)
+	executor := NewExecutor("", runner)
 	env, workspaceDir := testEnvironment(t)
 	plan := runtime.ApplyPlan{
 		Environment:  env,
@@ -58,7 +58,7 @@ func TestStatusMapsStoppedState(t *testing.T) {
 			{output: `[{"Service":"mock-1","State":"exited","Publishers":null}]`},
 		},
 	}
-	executor := NewExecutor(runner)
+	executor := NewExecutor("", runner)
 
 	result, err := executor.Status(context.Background(), testLifecyclePlan(t))
 	if err != nil {
@@ -69,8 +69,36 @@ func TestStatusMapsStoppedState(t *testing.T) {
 	}
 }
 
+func TestDoctorExecutesCheckScript(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []fakeRunResult{
+			{output: "mysql check ok"},
+		},
+	}
+	executor := NewExecutor("", runner)
+	plan := testLifecyclePlan(t)
+	checkScript := filepath.Join(plan.WorkspaceDir, "check.sh")
+	if err := os.WriteFile(checkScript, []byte("#!/usr/bin/env bash\n"), 0o755); err != nil {
+		t.Fatalf("write check script: %v", err)
+	}
+
+	result, err := executor.Doctor(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	if result.Changed {
+		t.Fatal("expected doctor to report unchanged")
+	}
+	if got := runner.calls[0].name; got != "/bin/sh" {
+		t.Fatalf("unexpected doctor command: %s", got)
+	}
+	if got := runner.calls[0].args; fmt.Sprint(got) != "["+checkScript+"]" {
+		t.Fatalf("unexpected doctor args: %v", got)
+	}
+}
+
 func TestCleanupRemovesWorkspaceDir(t *testing.T) {
-	executor := NewExecutor(&fakeRunner{})
+	executor := NewExecutor("", &fakeRunner{})
 	env, workspaceDir := testEnvironment(t)
 	plan := runtime.LifecyclePlan{
 		Environment:  env,
