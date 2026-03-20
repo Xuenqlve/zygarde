@@ -120,16 +120,29 @@
 - [x] 为一期样板中间件补齐多实例配置缓存与 compose context 生成
 - [x] 增加 `start`、`stop`
 - [x] 将 `mysql/single` 的 Compose 渲染与版本差异（`v5.7 / v8.0`）收敛到单一 `pkg` 实现
-- [ ] 增加 `list`
-- [ ] 补充错误恢复和失败清理逻辑
-- [ ] 将 `start` 生命周期恢复路径补齐为稳定的真实集成测试
+- [x] 增加 `list`
+- [x] 补充错误恢复和失败清理逻辑
+- [x] 将 `start` 生命周期恢复路径补齐为稳定的真实集成测试
 - [ ] 补充更多基础单元测试和主链路集成测试
+- [ ] 继续收敛 `docker compose` 与 `podman compose` 的兼容性问题，并完善 Podman 独立 deployment 实现
+- [ ] 补充模板管理、蓝图管理的完整 CRUD
 
 #### P2
 
 - [ ] 抽象第二个中间件，验证 `pkg/*` 作为唯一扩展点是否稳定
 - [ ] 为未来 K8s 后端补齐 runtime context 和 pkg 实现扩展点
-- [ ] 补充模板管理、蓝图管理的完整 CRUD
+- [ ] 补充 `doctor` 二期能力，支持结构化诊断结果而不是仅执行 `check.sh`
+- [ ] 完善项目级帮助文档与示例库，补充 blueprint / template / 多中间件组合的系统示例
+
+当前已完成：本地 blueprint `list / show / validate`，内置 template `list / show`
+
+### 多中间件组合测试 TODO
+
+- [x] `mysql + redis` 组合蓝图：验证 `up -> doctor -> down`
+- [x] `mysql + redis` 组合蓝图：验证 `create -> start -> doctor -> down`
+- [x] `mysql + redis + rabbitmq` 组合蓝图：验证 `up -> doctor -> down`
+- [x] `mysql + redis + rabbitmq` 组合蓝图：验证 `create -> start -> doctor -> down`
+- [x] `postgresql + kafka` 组合蓝图：验证 `up -> doctor -> down`
 
 ### 最近完成
 
@@ -144,6 +157,37 @@
 - [x] 为 `pkg/*` Compose 版实现补充规范文档，并建立 `compose-stack -> docker/目录事实 -> pkg 单实现入口` 的设计约束
 - [x] `config/zygarde.yaml` 已可启动两个 MySQL single，并支持 `v5.7 + v8.0` 混合版本
 - [x] 新增 `internal/tool/number_dispenser.go` 单任务级端口分发器，用于默认端口冲突规避与显式端口校验
+- [x] 蓝图管理一期：本地 blueprint `list / show / validate`
+- [x] 模板管理一期：内置 template `list / show`
+- [x] Podman deployment 已从通用 compose executor 中拆出独立执行分支，并开始收敛 `start/down` 差异
+
+### 下一阶段平台模块 TODO
+
+#### Blueprint 管理
+
+- [ ] 增加 `blueprint create`
+- [ ] 增加 `blueprint delete`
+- [ ] 增加 `blueprint edit/update`
+- [ ] 支持按 blueprint 名称执行，而不只按文件路径执行
+
+#### Template 管理
+
+- [ ] 增加 `template validate`，校验模板元数据与实际 `pkg` 能力一致
+- [ ] 增加模板帮助文档关联检查，确保 `docs/<middleware>.md` 与模板元数据同步
+- [ ] 补充模板默认值/支持版本的展示增强
+- [ ] 评估是否需要 `template create/update/delete`，若不支持外部模板则明确只保留只读管理能力
+
+#### 生命周期与诊断
+
+- [ ] 为 `doctor` 增加结构化结果模型，区分配置检查、运行检查、脚本检查
+- [ ] 评估 `stop / destroy` 的长期用户语义，明确与 `down` 的关系
+- [ ] 增加更多组合场景下的异常恢复测试
+- [ ] 继续完善 Podman 下 `status / doctor / down` 的兼容性边界处理
+
+#### Runtime 扩展
+
+- [ ] 为未来 K8s runtime 抽出最小可复用的 driver / render / deployment 扩展点
+- [ ] 评估 `pkg` 模板元数据对多 runtime 的建模方式，避免只绑定 Compose
 
 ### 下一阶段重点：12 个中间件的 Compose type 实现
 
@@ -161,7 +205,7 @@
 
 - TODO 按 `middleware + template` 维度维护
 - `version` 是同一 template 的支持参数，不单独拆成多个待办项
-- 每完成一个 template，需同步交付 `pkg + docs + test/create`
+- 每完成一个 template，需同步交付 `pkg + docs + test/command`
 
 当前整体进度：
 
@@ -244,7 +288,7 @@ Elasticsearch（支持版本：`v8.18 / v8.19`）
 ### 背景
 
 - 当前 `mysql/single` 已基本跑通主链路，但缺少覆盖完整 create 生命周期的专项测试。
-- `Create` 当前已经执行了 `Apply`，实际语义是“创建并启动环境”，需要评估这是否符合最终设计。
+- `Create` 现已调整为纯创建语义，对齐 `docker compose create`，负责创建运行时资源但不启动环境。
 - 缺少一个统一的健康检查入口来判断生成配置和 Docker 实际运行状态是否正确。
 - 测试完成后需要明确资源回收路径，避免残留环境和容器。
 
@@ -258,7 +302,7 @@ Elasticsearch（支持版本：`v8.18 / v8.19`）
 ### 范围
 
 - 会改：
-  - `test/create/mysql_test.go`
+  - `test/command/mysql_test.go`
   - `internal/app`
   - `internal/cli`
   - `internal/coordinator`
@@ -272,10 +316,10 @@ Elasticsearch（支持版本：`v8.18 / v8.19`）
 
 #### P0
 
-- [ ] 梳理 `Create` 当前语义，确认它是否应继续保持“create 并启动环境”
-- [x] 为 `mysql/single` 设计 `test/create/mysql_test.go` 的完整测试方案
-- [ ] 明确测试回收策略，确保失败场景也能执行 `destroy`
-- [ ] 补齐 `internal/app/app.go` 的测试使用路径，确保 `Create / Stop / Start / Destroy` 能串成完整生命周期
+- [x] 梳理并调整 `Create` 语义：纯创建运行时资源但不启动环境
+- [x] 为 `mysql/single` 设计 `test/command/mysql_test.go` 的完整测试方案
+- [x] 明确测试回收策略，确保失败场景也能执行 `destroy/down`
+- [x] 补齐 `internal/app/app.go` 的测试使用路径，确保 `Create / Stop / Start / Destroy` 能串成完整生命周期
 - [x] 设计并实现 `doctor` 命令，一期通过执行环境目录下 `check.sh` 完成检查
 - [x] 设计并实现 `down` 命令，语义对齐 `docker compose down`
 - [x] 明确 `down` 与现有 `destroy` 的关系，优先复用当前 `destroy + cleanup` 链路
@@ -283,11 +327,11 @@ Elasticsearch（支持版本：`v8.18 / v8.19`）
 
 #### P1
 
-- [ ] 落地 `test/create/mysql_test.go`，覆盖 `create -> verify -> stop -> start -> destroy`
-- [x] 落地 `test/create/mysql_test.go`，覆盖 `up -> doctor -> down`
-- [ ] 在测试中校验生成的环境元数据、runtime artifact、Compose bundle 和 MySQL 实际可访问性
-- [ ] 评估并补充 `start` 的真实恢复验证，确认 stop 后可以重新启动成功
-- [ ] 评估 `Create` 与 `Start` 的职责是否需要拆分或重命名
+- [x] 落地 `test/command/mysql_test.go`，覆盖 `create -> verify -> start -> doctor -> down`
+- [x] 落地 `test/command/mysql_test.go`，覆盖 `up -> doctor -> down`
+- [x] 在测试中校验生成的环境元数据、runtime artifact、Compose bundle 和 MySQL 实际可访问性
+- [x] 评估并补充 `start` 的真实恢复验证，确认 stop 后可以重新启动成功
+- [x] 调整 `Create` 与 `Start` 的职责边界：`Create` 纯创建，`Start` 负责启动
 - [x] 在 `app / coordinator / runtime / deployment/compose` 打通 `doctor`
 - [x] 在 `app / coordinator / runtime / deployment/compose` 打通 `down`
 - [x] 为 `mysql/single` 落地全流程测试，覆盖 `up -> doctor -> down`

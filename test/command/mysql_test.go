@@ -1,4 +1,4 @@
-package create
+package command
 
 import (
 	"strconv"
@@ -18,6 +18,42 @@ func TestMySQLSingleUpDoctorDown(t *testing.T) {
 	_, artifact := tc.verifyRunningEnvironment(upResult)
 	tc.verifyRuntimeFiles(artifact)
 	tc.verifyStatusRunning()
+	tc.waitForDoctorPass(2 * time.Minute)
+	tc.downAndVerify(upResult)
+}
+
+func TestMySQLSingleCreateStartDoctorDown(t *testing.T) {
+	tc := newLifecycleTestContext(t)
+
+	mysqlPort := freePort(t)
+	t.Logf("mysql port: %d", mysqlPort)
+	blueprintPath := tc.writeBlueprint(mysqlBlueprint(mysqlPort))
+
+	createResult := tc.create(blueprintPath)
+	tc.verifyCurrentEnvironment(createResult)
+	_, artifact := tc.verifyStoppedEnvironment(createResult)
+	tc.verifyRuntimeFiles(artifact)
+	tc.verifyStatusStopped()
+	tc.startAndVerify(createResult)
+	tc.waitForDoctorPass(2 * time.Minute)
+	tc.downAndVerify(createResult)
+}
+
+func TestMySQLSingleUpStopStartDoctorDown(t *testing.T) {
+	tc := newLifecycleTestContext(t)
+
+	mysqlPort := freePort(t)
+	t.Logf("mysql port: %d", mysqlPort)
+	blueprintPath := tc.writeBlueprint(mysqlBlueprint(mysqlPort))
+
+	upResult := tc.up(blueprintPath)
+	tc.verifyCurrentEnvironment(upResult)
+	_, artifact := tc.verifyRunningEnvironment(upResult)
+	tc.verifyRuntimeFiles(artifact)
+	tc.verifyStatusRunning()
+	tc.waitForDoctorPass(2 * time.Minute)
+	tc.stopAndVerify(upResult)
+	tc.startAndVerify(upResult)
 	tc.waitForDoctorPass(2 * time.Minute)
 	tc.downAndVerify(upResult)
 }

@@ -81,6 +81,12 @@
 3. 尽可能抽取版本间共性
 4. 仅将真正有差异的部分通过版本控制
 
+对命令、SQL、检查脚本这类“语法不兼容”的差异，还应遵循：
+
+- 已知版本时，直接按 `version` 选择对应命令
+- 不要把“先执行一个不兼容命令再 fallback”的噪音流程保留在最终脚本中
+- 详细规则见 `version-compatibility-guidelines.md`
+
 不推荐：
 
 - `pkg/mysql/single_v57.go`
@@ -164,6 +170,7 @@
 - 未支持的版本在 `Normalize` 或 `Validate` 阶段直接报错
 - 不允许静默回退到其他版本
 - 版本矩阵更新时，应同步更新文档与最低验证用例
+- 若该版本矩阵会影响平台侧模板发现能力，应同步更新 `pkg` 中的模板元数据注册内容
 
 ## 用户帮助文档规范
 
@@ -214,15 +221,34 @@
 - 示例应可直接作为 `zygarde.yaml` 片段参考，不写伪代码
 - 语言保持帮助文档风格，优先清晰、直接、可查阅
 
+## 模板元数据规范
+
+每新增或补齐一个 Compose 版 `pkg/<middleware>/<template>` 能力时，应同步维护模板元数据，使平台侧 `template list / template show` 能反映真实能力。
+
+约束如下：
+
+- 模板元数据的事实来源应放在 `pkg`，不要在 `internal/*` 中维护平行清单
+- 模板元数据至少应包含：
+  - `middleware`
+  - `template`
+  - `runtime`
+  - 支持版本
+  - 是否默认模板
+  - 帮助文档路径
+  - 简要说明
+- 若新增 template、调整支持版本、修改默认模板、变更文档路径，应同步更新模板元数据
+- `internal/app -> coordinator -> cli` 只负责读取和展示模板元数据，不应反向定义模板能力
+- 模板元数据应以当前真实实现为准，不提前暴露未支持的 template 或版本
+
 ## Compose 集成测试规范
 
-每新增或补齐一个 Compose 版 `pkg/<middleware>/<template>` 用户可运行能力时，应同步评估并补充 `test/create/` 下对应的集成测试。
+每新增或补齐一个 Compose 版 `pkg/<middleware>/<template>` 用户可运行能力时，应同步评估并补充 `test/command/` 下对应的功能测试。
 
 推荐落点：
 
-- `test/create/mysql_test.go`
-- `test/create/redis_test.go`
-- `test/create/mongodb_test.go`
+- `test/command/mysql_test.go`
+- `test/command/redis_test.go`
+- `test/command/mongodb_test.go`
 
 约束如下：
 
@@ -249,10 +275,10 @@
 
 复用要求：
 
-- 通用测试基建优先沉淀到 `test/create/base.go`
+- 通用测试基建优先沉淀到 `test/command/base.go`
 - `base.go` 负责容器引擎检查、测试工作目录切换、`up/status/doctor/down` 公共流程、环境标记校验、artifact 校验、doctor 重试、兜底清理和日志输出
 - 单个中间件测试文件只保留 blueprint 生成、场景参数和中间件私有断言
-- 不要在每个 `test/create/<middleware>_test.go` 中重复实现相同的环境准备和回收逻辑
+- 不要在每个 `test/command/<middleware>_test.go` 中重复实现相同的环境准备和回收逻辑
 
 日志要求：
 

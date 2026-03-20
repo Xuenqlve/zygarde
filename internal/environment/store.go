@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/xuenqlve/zygarde/internal/model"
 	"github.com/xuenqlve/zygarde/internal/runtime"
@@ -14,6 +16,7 @@ import (
 type Store interface {
 	Save(env model.Environment) error
 	Get(id string) (model.Environment, error)
+	List() ([]model.Environment, error)
 	SaveRuntimeArtifact(artifact runtime.RuntimeArtifact) error
 	GetRuntimeArtifact(id string) (runtime.RuntimeArtifact, error)
 }
@@ -72,6 +75,56 @@ func (s FileStore) Get(id string) (model.Environment, error) {
 		return model.Environment{}, err
 	}
 	return env, nil
+}
+
+// List loads all persisted environment snapshots, sorted by update time descending.
+func (s FileStore) List() ([]model.Environment, error) {
+	entries, err := os.ReadDir(s.rootDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []model.Environment{}, nil
+		}
+		return nil, err
+	}
+
+	environments := make([]model.Environment, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".runtime.json") {
+			continue
+		}
+
+		data, readErr := os.ReadFile(filepath.Join(s.rootDir, name))
+		if readErr != nil {
+			return nil, readErr
+		}
+
+		var env model.Environment
+		if unmarshalErr := json.Unmarshal(data, &env); unmarshalErr != nil {
+			return nil, unmarshalErr
+		}
+		environments = append(environments, env)
+	}
+
+	sort.Slice(environments, func(i, j int) bool {
+		left := environments[i].UpdatedAt
+		if left.IsZero() {
+			left = environments[i].CreatedAt
+		}
+		right := environments[j].UpdatedAt
+		if right.IsZero() {
+			right = environments[j].CreatedAt
+		}
+		if left.Equal(right) {
+			return environments[i].ID < environments[j].ID
+		}
+		return left.After(right)
+	})
+
+	return environments, nil
 }
 
 // GetRuntimeArtifact loads one runtime artifact snapshot by environment id.

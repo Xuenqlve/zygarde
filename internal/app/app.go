@@ -36,14 +36,22 @@ func New() (*App, error) {
 		return nil, err
 	}
 
-	return &App{
-		cfg: cfg,
-		coordinator: coordinator.New(
+	return NewWithCoordinator(
+		cfg,
+		coordinator.New(
 			store.NewFileBlueprintStore(),
 			environment.NewFileStore(".zygarde/environments"),
 			runtimes,
 		),
-	}, nil
+	), nil
+}
+
+// NewWithCoordinator creates an application instance with injected dependencies.
+func NewWithCoordinator(cfg config.Config, coord coordinator.Coordinator) *App {
+	return &App{
+		cfg:         cfg,
+		coordinator: coord,
+	}
 }
 
 // Create is reserved for the future create-only flow.
@@ -52,10 +60,21 @@ func (a *App) Create(ctx context.Context, blueprintFile string, envType runtime.
 		envType = a.cfg.DefaultEnvironmentType
 	}
 
-	return a.coordinator.Create(ctx, coordinator.CreateRequest{
+	result, err := a.coordinator.Create(ctx, coordinator.CreateRequest{
 		BlueprintFile:   blueprintFile,
 		EnvironmentType: envType,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if err := environment.SaveCurrent(environment.CurrentEnvironment{
+		EnvironmentID: result.EnvironmentID,
+		WorkspaceDir:  result.WorkspaceDir,
+		ProjectName:   result.ProjectName,
+	}); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // Up creates runtime assets and starts the environment.
@@ -79,6 +98,48 @@ func (a *App) Up(ctx context.Context, blueprintFile string, envType runtime.Envi
 		return nil, err
 	}
 	return result, nil
+}
+
+// List returns all persisted environments.
+func (a *App) List(ctx context.Context) (*coordinator.ListResult, error) {
+	return a.coordinator.List(ctx)
+}
+
+// ListBlueprints returns discovered local blueprint files.
+func (a *App) ListBlueprints(ctx context.Context, root string) (*coordinator.BlueprintListResult, error) {
+	return a.coordinator.ListBlueprints(ctx, root)
+}
+
+// ListTemplates returns the built-in middleware template catalog.
+func (a *App) ListTemplates(ctx context.Context, envType runtime.EnvironmentType) (*coordinator.TemplateListResult, error) {
+	if envType == "" {
+		envType = a.cfg.DefaultEnvironmentType
+	}
+	return a.coordinator.ListTemplates(ctx, string(envType))
+}
+
+// ShowTemplate returns one built-in middleware template detail.
+func (a *App) ShowTemplate(ctx context.Context, middleware, templateName string, envType runtime.EnvironmentType) (*coordinator.TemplateShowResult, error) {
+	if envType == "" {
+		envType = a.cfg.DefaultEnvironmentType
+	}
+	return a.coordinator.ShowTemplate(ctx, middleware, templateName, string(envType))
+}
+
+// ShowBlueprint returns one blueprint summary.
+func (a *App) ShowBlueprint(ctx context.Context, blueprintFile string, envType runtime.EnvironmentType) (*coordinator.BlueprintShowResult, error) {
+	if envType == "" {
+		envType = a.cfg.DefaultEnvironmentType
+	}
+	return a.coordinator.ShowBlueprint(ctx, blueprintFile, envType)
+}
+
+// ValidateBlueprint validates one blueprint for the target runtime.
+func (a *App) ValidateBlueprint(ctx context.Context, blueprintFile string, envType runtime.EnvironmentType) (*coordinator.BlueprintValidateResult, error) {
+	if envType == "" {
+		envType = a.cfg.DefaultEnvironmentType
+	}
+	return a.coordinator.ValidateBlueprint(ctx, blueprintFile, envType)
 }
 
 // Status queries one created environment by id.

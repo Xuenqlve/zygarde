@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"net"
+	"strings"
 	"testing"
 
 	runtimecompose "github.com/xuenqlve/zygarde/internal/runtime/compose"
@@ -129,6 +130,36 @@ func TestMasterSlaveSpecConfigureRejectsDuplicatePorts(t *testing.T) {
 	}, 1)
 	if err == nil {
 		t.Fatalf("expected duplicate master/slave port %d to be rejected", port)
+	}
+}
+
+func TestMasterSlaveCheckScriptUsesVersionSpecificReplicaStatusCommand(t *testing.T) {
+	check57 := masterSlaveCheckScript("mysql-ms", "MYSQL_MS", "mysql-ms-master", "mysql-ms-slave", "v5.7")
+	if !strings.Contains(check57, `"SHOW SLAVE STATUS\\G"`) {
+		t.Fatalf("expected v5.7 check script to use SHOW SLAVE STATUS, got %q", check57)
+	}
+	if strings.Contains(check57, `"SHOW REPLICA STATUS\\G"`) {
+		t.Fatalf("did not expect v5.7 check script to use SHOW REPLICA STATUS, got %q", check57)
+	}
+
+	check80 := masterSlaveCheckScript("mysql-ms", "MYSQL_MS", "mysql-ms-master", "mysql-ms-slave", "v8.0")
+	if !strings.Contains(check80, `"SHOW REPLICA STATUS\\G"`) {
+		t.Fatalf("expected v8.0 check script to use SHOW REPLICA STATUS, got %q", check80)
+	}
+}
+
+func TestMasterSlaveBuildScriptWaitsForVersionSpecificReplicationReady(t *testing.T) {
+	build57 := masterSlaveBuildScript("mysql-ms", "MYSQL_MS", "mysql-ms-master", "mysql-ms-slave", "slave-init.sql", "v5.7")
+	if !strings.Contains(build57, "wait_replication_ready") {
+		t.Fatalf("expected build script to wait for replication readiness, got %q", build57)
+	}
+	if !strings.Contains(build57, "Slave_IO_Running: Yes") || !strings.Contains(build57, "Slave_SQL_Running: Yes") {
+		t.Fatalf("expected v5.7 build script to wait on slave readiness fields, got %q", build57)
+	}
+
+	build80 := masterSlaveBuildScript("mysql-ms", "MYSQL_MS", "mysql-ms-master", "mysql-ms-slave", "slave-init.sql", "v8.0")
+	if !strings.Contains(build80, "Replica_IO_Running: Yes") || !strings.Contains(build80, "Replica_SQL_Running: Yes") {
+		t.Fatalf("expected v8.0 build script to wait on replica readiness fields, got %q", build80)
 	}
 }
 

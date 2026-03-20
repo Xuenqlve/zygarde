@@ -32,9 +32,10 @@ Zygarde 项目的统一开发 skill。
 4. 按 [todo-template.md](references/todo-template.md) 维护 TODO。
 5. 实现时按 TODO 分步推进，每一步都确认落点是否正确。
 6. 若交付涉及 `pkg/<middleware>` 的用户可配置能力，同步更新 `docs/` 下对应帮助文档。
-7. 若交付涉及 Compose 版中间件可运行能力，同步评估并补充 `test/create/` 下对应集成测试。
-8. 完成后执行必要验证，至少覆盖编译、测试或目录结果检查。
-9. 总结改动并提交。
+7. 若交付涉及用户命令主链路或 Compose 版中间件可运行能力，同步评估并补充 `test/command/` 下对应功能测试。
+8. 新增测试时，优先将单元测试统一落在 `test/<domain>/` 下，避免继续分散在 `internal/*` 或 `pkg/*`；历史存量测试可逐步迁移。
+9. 完成后执行必要验证，至少覆盖编译、测试或目录结果检查。
+10. 总结改动并提交。
 
 ## 目录落点规则
 
@@ -42,6 +43,7 @@ Zygarde 项目的统一开发 skill。
 
 必须遵守以下规则：
 - 某个中间件独有的模板变量、默认值、校验和辅助逻辑，进入 `pkg/<middleware>`。
+- 模板可用性清单、支持版本、默认 template、帮助文档路径等“模板元数据”，优先由 `pkg/*` 暴露，不要把这类事实来源重新定义在 `internal/*`。
 - 模板管理、蓝图编排、环境状态、部署流程、存储抽象等平台核心逻辑，进入 `internal/*`。
 - 不要把环境生命周期编排逻辑放进 `pkg/*`。
 - 不要把某一种中间件的硬编码分支散落在多个 `internal/*` 模块中。
@@ -91,6 +93,14 @@ Zygarde 项目的统一开发 skill。
 - 最终要覆盖 `compose-stack` 当前支持的 12 个中间件能力，而不是只覆盖单个 demo middleware。
 - 对同一个 middleware/template 的多个版本目录，应在 `pkg/*` 中收敛为单一实现入口，通过 `version` 控制差异，而不是按版本复制多个方法。
 - `docker/<middleware>/<scenario>_<version>/` 应被视为已验证行为与版本差异的事实来源；`pkg/*` 负责对这些差异做抽象收敛。
+- 如果需要对外暴露“系统当前支持哪些 middleware/template/runtime/version”，应优先由 `pkg` 层维护模板元数据注册表，再由 `internal/app -> coordinator -> cli` 做消费和展示。
+
+关于模板管理，当前建议遵守：
+- `template list / template show` 这类能力属于平台命令，应落在 `internal/*` 主链路中实现。
+- 但模板可用性元数据本身应放在 `pkg`，例如 `pkg/catalog` 或其他 `pkg/*` 聚合入口。
+- `internal/*` 不应重新硬编码一份“支持哪些中间件、哪些 template、哪些版本”的平行清单。
+- 模板管理默认展示的内容应至少包含：`middleware`、`template`、`runtime`、支持版本、默认模板标记、帮助文档路径、简要说明。
+- 新增或变更 `pkg/<middleware>/<template>` 能力时，如果影响模板可发现性，必须同步更新模板元数据。
 
 关于一次性工具与任务级全局状态，当前建议遵守：
 - 当前项目可按“一次执行完成即退出”的单任务 CLI 工具来设计，不必默认按长生命周期服务建模。
@@ -130,6 +140,8 @@ Zygarde 项目的统一开发 skill。
 - 没有明确收益时，不提前引入复杂框架或过度抽象。
 - 不要把 Compose 专属字段继续塞进“伪公共 environment 模型”中；runtime 私有产物应放到对应阶段 plan/result 中。
 - 不要在 `internal/*` 中推断某个 middleware 的镜像、端口、环境变量默认值；这些必须在 `pkg/*` 中先转换好。
+- 不要在 `internal/*` 中维护独立的模板能力白名单、版本矩阵或帮助文档映射；这类信息应从 `pkg` 元数据读取。
+- 新增单元测试统一放在 `test/` 目录下，按主题拆分，例如 `test/command/`、`test/app/`、`test/coordinator/`；不要继续在 `internal/*` 下新增零散单元测试文件。
 
 ## 交付检查
 
@@ -145,5 +157,6 @@ Zygarde 项目的统一开发 skill。
 - pkg 开发总览： [pkg-development-summary.md](references/pkg-development-summary.md)
 - pkg 实现规范： [pkg-middleware-guidelines.md](references/pkg-middleware-guidelines.md)
 - pkg Compose 模板规范： [pkg-compose-template-guidelines.md](references/pkg-compose-template-guidelines.md)
+- 版本命令兼容规范： [version-compatibility-guidelines.md](references/version-compatibility-guidelines.md)
 - runtime driver 规则： [runtime-driver-guidelines.md](references/runtime-driver-guidelines.md)
 - TODO 模板： [todo-template.md](references/todo-template.md)

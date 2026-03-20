@@ -33,6 +33,9 @@ func (c Coordinator) Doctor(ctx context.Context, req EnvironmentRequest) (*Resul
 	if err != nil {
 		return nil, err
 	}
+	if err := validateLifecycleAction("doctor", env); err != nil {
+		return nil, err
+	}
 
 	plan, err := driver.PlanLifecycle(ctx, runtime.BuildLifecycleRequest{
 		Environment: env,
@@ -90,6 +93,9 @@ func (c Coordinator) Start(ctx context.Context, req EnvironmentRequest) (*Result
 	if err != nil {
 		return nil, err
 	}
+	if err := validateLifecycleAction("start", env); err != nil {
+		return nil, err
+	}
 
 	plan, err := driver.PlanLifecycle(ctx, runtime.BuildLifecycleRequest{
 		Environment: env,
@@ -122,6 +128,9 @@ func (c Coordinator) Stop(ctx context.Context, req EnvironmentRequest) (*Result,
 	if err != nil {
 		return nil, err
 	}
+	if err := validateLifecycleAction("stop", env); err != nil {
+		return nil, err
+	}
 
 	plan, err := driver.PlanLifecycle(ctx, runtime.BuildLifecycleRequest{
 		Environment: env,
@@ -151,6 +160,9 @@ func (c Coordinator) Stop(ctx context.Context, req EnvironmentRequest) (*Result,
 func (c Coordinator) Down(ctx context.Context, req EnvironmentRequest) (*Result, error) {
 	env, artifact, driver, err := c.loadEnvironmentRuntime(req.EnvironmentID)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateLifecycleAction("down", env); err != nil {
 		return nil, err
 	}
 
@@ -218,4 +230,26 @@ func (c Coordinator) loadEnvironmentRuntime(id string) (model.Environment, runti
 		return model.Environment{}, runtime.RuntimeArtifact{}, nil, err
 	}
 	return env, artifact, driver, nil
+}
+
+func validateLifecycleAction(action string, env model.Environment) error {
+	switch action {
+	case "doctor":
+		if env.Status == model.EnvironmentStatusDestroyed {
+			return fmt.Errorf("environment %s cannot be diagnosed from status %s", env.ID, env.Status)
+		}
+	case "start":
+		if env.Status != model.EnvironmentStatusStopped {
+			return fmt.Errorf("environment %s cannot be started from status %s", env.ID, env.Status)
+		}
+	case "stop":
+		if env.Status != model.EnvironmentStatusRunning {
+			return fmt.Errorf("environment %s cannot be stopped from status %s", env.ID, env.Status)
+		}
+	case "down":
+		if env.Status == model.EnvironmentStatusDestroyed {
+			return fmt.Errorf("environment %s cannot be taken down from status %s", env.ID, env.Status)
+		}
+	}
+	return nil
 }

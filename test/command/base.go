@@ -1,4 +1,4 @@
-package create
+package command
 
 import (
 	"context"
@@ -127,6 +127,50 @@ func (tc *lifecycleTestContext) up(blueprintPath string) *lifecycleUpResult {
 	return upResult
 }
 
+func (tc *lifecycleTestContext) create(blueprintPath string) *lifecycleUpResult {
+	tc.t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
+	tc.t.Cleanup(cancel)
+
+	var cleanupTarget string
+	tc.t.Cleanup(func() {
+		if cleanupTarget == "" {
+			return
+		}
+		tc.t.Logf("cleanup fallback: down environment %s", cleanupTarget)
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cleanupCancel()
+		_, _ = tc.app.Down(cleanupCtx, cleanupTarget)
+	})
+
+	tc.t.Log("step create: render runtime assets without starting environment")
+	result, err := tc.app.Create(ctx, blueprintPath, runtime.EnvironmentTypeCompose)
+	if err != nil {
+		tc.t.Fatalf("create environment: %v", err)
+	}
+
+	createResult := &lifecycleUpResult{
+		EnvironmentID: result.EnvironmentID,
+		WorkspaceDir:  result.WorkspaceDir,
+		ProjectName:   result.ProjectName,
+	}
+	if createResult.EnvironmentID == "" {
+		tc.t.Fatal("expected environment id after create")
+	}
+	if createResult.WorkspaceDir == "" {
+		tc.t.Fatal("expected workspace dir after create")
+	}
+	if createResult.ProjectName == "" {
+		tc.t.Fatal("expected project name after create")
+	}
+	cleanupTarget = createResult.EnvironmentID
+
+	tc.t.Logf("create result: environment_id=%s workspace_dir=%s project_name=%s", createResult.EnvironmentID, createResult.WorkspaceDir, createResult.ProjectName)
+	tc.t.Logf("create message: %s", result.Message)
+	return createResult
+}
+
 func (tc *lifecycleTestContext) verifyCurrentEnvironment(upResult *lifecycleUpResult) environment.CurrentEnvironment {
 	tc.t.Helper()
 
@@ -164,6 +208,26 @@ func (tc *lifecycleTestContext) verifyRunningEnvironment(upResult *lifecycleUpRe
 	return env, artifact
 }
 
+func (tc *lifecycleTestContext) verifyStoppedEnvironment(createResult *lifecycleUpResult) (model.Environment, runtime.RuntimeArtifact) {
+	tc.t.Helper()
+
+	env, err := tc.envStore.Get(createResult.EnvironmentID)
+	if err != nil {
+		tc.t.Fatalf("load environment record: %v", err)
+	}
+	if env.Status != model.EnvironmentStatusStopped {
+		tc.t.Fatalf("expected stopped status after create, got %s", env.Status)
+	}
+	tc.t.Logf("environment record after create: id=%s status=%s created_at=%s updated_at=%s", env.ID, env.Status, env.CreatedAt.Format(time.RFC3339), env.UpdatedAt.Format(time.RFC3339))
+
+	artifact, err := tc.envStore.GetRuntimeArtifact(createResult.EnvironmentID)
+	if err != nil {
+		tc.t.Fatalf("load runtime artifact: %v", err)
+	}
+	tc.t.Logf("runtime artifact after create: environment_id=%s workspace_dir=%s primary_file=%s project_name=%s", artifact.EnvironmentID, artifact.WorkspaceDir, artifact.PrimaryFile, artifact.ProjectName)
+	return env, artifact
+}
+
 func (tc *lifecycleTestContext) verifyRuntimeFiles(artifact runtime.RuntimeArtifact) {
 	tc.t.Helper()
 
@@ -193,6 +257,73 @@ func (tc *lifecycleTestContext) verifyStatusRunning() {
 		tc.t.Fatalf("expected running status message, got %q", result.Message)
 	}
 	tc.t.Logf("status result: %s", result.Message)
+}
+
+func (tc *lifecycleTestContext) verifyStatusStopped() {
+	tc.t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	tc.t.Log("step status: verify current directory environment is stopped")
+	result, err := tc.app.Status(ctx, "")
+	if err != nil {
+		tc.t.Fatalf("status current environment: %v", err)
+	}
+	if !strings.Contains(result.Message, "stopped") {
+		tc.t.Fatalf("expected stopped status message, got %q", result.Message)
+	}
+	tc.t.Logf("status result: %s", result.Message)
+}
+
+func (tc *lifecycleTestContext) stopAndVerify(upResult *lifecycleUpResult) {
+	tc.t.Helper()
+
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer stopCancel()
+
+	tc.t.Log("step stop: stop current directory environment")
+	result, err := tc.app.Stop(stopCtx, "")
+	if err != nil {
+		tc.t.Fatalf("stop current environment: %v", err)
+	}
+	tc.t.Logf("stop result: %s", result.Message)
+
+	env, err := tc.envStore.Get(upResult.EnvironmentID)
+	if err != nil {
+		tc.t.Fatalf("reload environment record after stop: %v", err)
+	}
+	if env.Status != model.EnvironmentStatusStopped {
+		tc.t.Fatalf("expected stopped status after stop, got %s", env.Status)
+	}
+	tc.t.Logf("environment record after stop: id=%s status=%s updated_at=%s", env.ID, env.Status, env.UpdatedAt.Format(time.RFC3339))
+
+	tc.verifyStatusStopped()
+}
+
+func (tc *lifecycleTestContext) startAndVerify(upResult *lifecycleUpResult) {
+	tc.t.Helper()
+
+	startCtx, startCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer startCancel()
+
+	tc.t.Log("step start: restart current directory environment")
+	result, err := tc.app.Start(startCtx, "")
+	if err != nil {
+		tc.t.Fatalf("start current environment: %v", err)
+	}
+	tc.t.Logf("start result: %s", result.Message)
+
+	env, err := tc.envStore.Get(upResult.EnvironmentID)
+	if err != nil {
+		tc.t.Fatalf("reload environment record after start: %v", err)
+	}
+	if env.Status != model.EnvironmentStatusRunning {
+		tc.t.Fatalf("expected running status after start, got %s", env.Status)
+	}
+	tc.t.Logf("environment record after start: id=%s status=%s updated_at=%s", env.ID, env.Status, env.UpdatedAt.Format(time.RFC3339))
+
+	tc.verifyStatusRunning()
 }
 
 func (tc *lifecycleTestContext) waitForDoctorPass(timeout time.Duration) {

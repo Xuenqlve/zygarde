@@ -8,6 +8,7 @@ import (
 
 // Executor defines runtime-backed deployment lifecycle operations.
 type Executor interface {
+	Create(ctx context.Context, plan runtime.ApplyPlan) (*runtime.OperationResult, error)
 	Apply(ctx context.Context, plan runtime.ApplyPlan) (*runtime.OperationResult, error)
 	Status(ctx context.Context, plan runtime.LifecyclePlan) (*runtime.StatusResult, error)
 	Doctor(ctx context.Context, plan runtime.LifecyclePlan) (*runtime.OperationResult, error)

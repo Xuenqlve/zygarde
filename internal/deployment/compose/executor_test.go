@@ -52,6 +52,78 @@ func TestApplyBuildsComposeCommandAndExtractsEndpoints(t *testing.T) {
 	}
 }
 
+func TestCreateBuildsComposeCreateCommand(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []fakeRunResult{
+			{output: "created"},
+		},
+	}
+	executor := NewExecutor("", runner)
+	env, workspaceDir := testEnvironment(t)
+	plan := runtime.ApplyPlan{
+		Environment:  env,
+		WorkspaceDir: workspaceDir,
+		ProjectName:  "demo-project",
+		PrimaryFile:  filepath.Join(workspaceDir, "docker-compose.yaml"),
+	}
+
+	result, err := executor.Create(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if !result.Changed {
+		t.Fatal("expected create to report changed")
+	}
+	if got := runner.calls[0].args; fmt.Sprint(got) != "[compose -p demo-project -f "+plan.PrimaryFile+" create]" {
+		t.Fatalf("unexpected create args: %v", got)
+	}
+}
+
+func TestPodmanStartUsesUpDetachedInsteadOfComposeStart(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []fakeRunResult{
+			{output: "started"},
+		},
+	}
+	executor := NewExecutor("podman", runner)
+	plan := testLifecyclePlan(t)
+
+	result, err := executor.Start(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if !result.Changed {
+		t.Fatal("expected start to report changed")
+	}
+	if got := runner.calls[0].name; got != "podman" {
+		t.Fatalf("unexpected binary: %s", got)
+	}
+	if got := runner.calls[0].args; fmt.Sprint(got) != "[compose -p demo-project -f "+plan.PrimaryFile+" up -d]" {
+		t.Fatalf("unexpected podman start args: %v", got)
+	}
+}
+
+func TestPodmanDestroyIgnoresMissingNetworkError(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []fakeRunResult{
+			{
+				output: "Error response from daemon: unable to find network with name or ID demo_default: network not found",
+				err:    fmt.Errorf("exit status 1"),
+			},
+		},
+	}
+	executor := NewExecutor("podman", runner)
+	plan := testLifecyclePlan(t)
+
+	result, err := executor.Destroy(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("destroy: %v", err)
+	}
+	if !result.Changed {
+		t.Fatal("expected destroy to report changed")
+	}
+}
+
 func TestStatusMapsStoppedState(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []fakeRunResult{

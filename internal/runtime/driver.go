@@ -117,6 +117,7 @@ type Driver interface {
 	Prepare(ctx context.Context, req PrepareRequest) (*PreparePlan, error)
 	Render(ctx context.Context, req RenderRequest) (*RenderPlan, error)
 	PlanApply(ctx context.Context, req BuildApplyRequest) (*ApplyPlan, error)
+	Create(ctx context.Context, plan ApplyPlan) (*OperationResult, error)
 	Apply(ctx context.Context, plan ApplyPlan) (*OperationResult, error)
 	PlanLifecycle(ctx context.Context, req BuildLifecycleRequest) (*LifecyclePlan, error)
 	Status(ctx context.Context, plan LifecyclePlan) (*StatusResult, error)

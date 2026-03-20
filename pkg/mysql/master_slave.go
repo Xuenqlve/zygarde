@@ -238,7 +238,7 @@ func (s *masterSlaveSpec) BuildRuntimeContexts(runtimeType runtime.EnvironmentTy
 				{
 					Name:      "mysql-master-slave-check",
 					PathKey:   "check_script",
-					Content:   masterSlaveCheckScript(service.Name, envKeyPrefix, masterContainerName, slaveContainerName),
+					Content:   masterSlaveCheckScript(service.Name, envKeyPrefix, masterContainerName, slaveContainerName, version),
 					Mode:      0o755,
 					MergeMode: runtime.AssetMergeScript,
 				},
@@ -259,7 +259,7 @@ func (s *masterSlaveSpec) BuildRuntimeContexts(runtimeType runtime.EnvironmentTy
 				{
 					Name:      "mysql-slave-init",
 					FileName:  slaveInitFile,
-					Content:   slaveInitSQL(version, masterServiceName, replicationUser, replicationPassword),
+					Content:   slaveInitSQL(version, "__MASTER_HOST__", replicationUser, replicationPassword),
 					Mode:      0o644,
 					MergeMode: runtime.AssetMergeUnique,
 				},
@@ -478,14 +478,14 @@ func masterInitSQL(replicationUser, replicationPassword string) string {
 func slaveInitSQL(version, masterHost, replicationUser, replicationPassword string) string {
 	if version == "v8.0" {
 		return fmt.Sprintf(
-			"-- configure replica channel\nSTOP REPLICA;\nRESET REPLICA ALL;\n\nCHANGE REPLICATION SOURCE TO\n  SOURCE_HOST='%s',\n  SOURCE_PORT=3306,\n  SOURCE_USER='%s',\n  SOURCE_PASSWORD='%s',\n  SOURCE_AUTO_POSITION=1,\n  GET_SOURCE_PUBLIC_KEY=1;\n\nSTART REPLICA;\n\nSET GLOBAL read_only = ON;\nSET GLOBAL super_read_only = ON;\n",
+			"-- configure replica channel\nSTOP REPLICA;\nRESET REPLICA ALL;\n\nCHANGE REPLICATION SOURCE TO\n  SOURCE_HOST='%s',\n  SOURCE_PORT=3306,\n  SOURCE_USER='%s',\n  SOURCE_PASSWORD='%s',\n  SOURCE_AUTO_POSITION=1,\n  SOURCE_CONNECT_RETRY=3,\n  GET_SOURCE_PUBLIC_KEY=1;\n\nSTART REPLICA;\n\nSET GLOBAL read_only = ON;\nSET GLOBAL super_read_only = ON;\n",
 			masterHost,
 			replicationUser,
 			replicationPassword,
 		)
 	}
 	return fmt.Sprintf(
-		"-- configure slave channel\nSTOP SLAVE;\nRESET SLAVE ALL;\n\nCHANGE MASTER TO\n  MASTER_HOST='%s',\n  MASTER_PORT=3306,\n  MASTER_USER='%s',\n  MASTER_PASSWORD='%s',\n  MASTER_AUTO_POSITION=1;\n\nSTART SLAVE;\n\nSET GLOBAL read_only = ON;\nSET GLOBAL super_read_only = ON;\n",
+		"-- configure slave channel\nSTOP SLAVE;\nRESET SLAVE ALL;\n\nCHANGE MASTER TO\n  MASTER_HOST='%s',\n  MASTER_PORT=3306,\n  MASTER_USER='%s',\n  MASTER_PASSWORD='%s',\n  MASTER_AUTO_POSITION=1,\n  MASTER_CONNECT_RETRY=3;\n\nSTART SLAVE;\n\nSET GLOBAL read_only = ON;\nSET GLOBAL super_read_only = ON;\n",
 		masterHost,
 		replicationUser,
 		replicationPassword,
@@ -497,9 +497,13 @@ func masterSlaveBuildScript(name, envKeyPrefix, masterContainerName, slaveContai
 	legacyFields := "Slave_IO_Running:|Slave_SQL_Running:|Seconds_Behind_Master:"
 	primary := "SHOW REPLICA STATUS\\G"
 	fields := "Replica_IO_Running:|Replica_SQL_Running:|Seconds_Behind_Source:"
+	readyIOField := "Replica_IO_Running: Yes"
+	readySQLField := "Replica_SQL_Running: Yes"
 	if version == "v5.7" {
 		primary = legacyPrimary
 		fields = legacyFields
+		readyIOField = "Slave_IO_Running: Yes"
+		readySQLField = "Slave_SQL_Running: Yes"
 	}
 
 	return fmt.Sprintf(strings.TrimSpace(`
@@ -517,28 +521,88 @@ wait_mysql_healthy() {
     return 1
 }
 
+wait_replication_user_ready() {
+    local container="$1"
+    local retries=30
+    for _ in $(seq 1 "$retries"); do
+        output="$("$CONTAINER_ENGINE" exec "$container" mysql -N -uroot "-p${%s_ROOT_PASSWORD}" -e "SELECT COUNT(*) FROM mysql.user WHERE user='${%s_REPLICATION_USER}' AND host='%%';" 2>/dev/null || true)"
+        if [ "$output" = "1" ]; then
+            return 0
+        fi
+        sleep 2
+    done
+    echo "replication user ${%s_REPLICATION_USER} was not ready on $container" >&2
+    return 1
+}
+
+wait_replication_ready() {
+    local container="$1"
+    local retries=30
+    for _ in $(seq 1 "$retries"); do
+        output="$("$CONTAINER_ENGINE" exec "$container" mysql -uroot "-p${%s_ROOT_PASSWORD}" -e %q 2>/dev/null || true)"
+        if printf "%%s\n" "$output" | grep -F %q >/dev/null && printf "%%s\n" "$output" | grep -F %q >/dev/null; then
+            return 0
+        fi
+        sleep 2
+    done
+    echo "replication for $container did not become ready" >&2
+    return 1
+}
+
+resolve_master_host() {
+    local container="$1"
+    if [ "$CONTAINER_ENGINE" = "podman" ]; then
+        "$CONTAINER_ENGINE" inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container"
+        return
+    fi
+    printf "%%s\n" "$container"
+}
+
 echo "[mysql master-slave] waiting for %s master"
 wait_mysql_healthy %s
 
 echo "[mysql master-slave] waiting for %s slave"
 wait_mysql_healthy %s
 
+echo "[mysql master-slave] waiting for %s replication user"
+wait_replication_user_ready %s
+
+master_host="$(resolve_master_host %s)"
+if [ -z "$master_host" ]; then
+    echo "failed to resolve master host for %s" >&2
+    exit 1
+fi
+
 echo "[mysql master-slave] configuring replication for %s"
-"$CONTAINER_ENGINE" exec -i %s mysql -uroot "-p${%s_ROOT_PASSWORD}" < %s
+sed "s/__MASTER_HOST__/$master_host/g" %s | "$CONTAINER_ENGINE" exec -i %s mysql -uroot "-p${%s_ROOT_PASSWORD}"
 
 echo "[mysql master-slave] replication status for %s"
 if ! "$CONTAINER_ENGINE" exec %s mysql -uroot "-p${%s_ROOT_PASSWORD}" -e %q | grep -E %q; then
     "$CONTAINER_ENGINE" exec %s mysql -uroot "-p${%s_ROOT_PASSWORD}" -e %q | grep -E %q || true
 fi
-`),
+
+echo "[mysql master-slave] waiting for %s replication ready"
+wait_replication_ready %s
+	`),
+		envKeyPrefix,
+		envKeyPrefix,
+		envKeyPrefix,
+		envKeyPrefix,
+		primary,
+		readyIOField,
+		readySQLField,
 		name,
 		masterContainerName,
 		name,
 		slaveContainerName,
 		name,
+		masterContainerName,
+		masterContainerName,
+		name,
+		name,
+		slaveInitFile,
 		slaveContainerName,
 		envKeyPrefix,
-		slaveInitFile,
 		name,
 		slaveContainerName,
 		envKeyPrefix,
@@ -548,10 +612,14 @@ fi
 		envKeyPrefix,
 		legacyPrimary,
 		legacyFields,
+		name,
+		slaveContainerName,
 	)
 }
 
-func masterSlaveCheckScript(name, envKeyPrefix, masterContainerName, slaveContainerName string) string {
+func masterSlaveCheckScript(name, envKeyPrefix, masterContainerName, slaveContainerName, version string) string {
+	replicaStatusCommand, replicaStatusFields := mysqlReplicaStatusCommand(version)
+
 	return fmt.Sprintf(strings.TrimSpace(`
 run_mysql_%s() {
     local container="$1"
@@ -563,9 +631,7 @@ echo "[mysql master-slave] container status for %s"
 "$CONTAINER_ENGINE" ps --format 'table {{.Names}}\t{{.Status}}' | awk 'NR==1 || /%s|%s/'
 
 echo "[mysql master-slave] replica status for %s"
-if ! run_mysql_%s %s "SHOW REPLICA STATUS\\G" | grep -E "Replica_IO_Running:|Replica_SQL_Running:|Seconds_Behind_Source:|Last_IO_Error:|Last_SQL_Error:"; then
-    run_mysql_%s %s "SHOW SLAVE STATUS\\G" | grep -E "Slave_IO_Running:|Slave_SQL_Running:|Seconds_Behind_Master:|Last_IO_Error:|Last_SQL_Error:"
-fi
+run_mysql_%s %s %q | grep -E %q
 
 echo "[mysql master-slave] test replication for %s"
 run_mysql_%s %s "CREATE DATABASE IF NOT EXISTS test_repl;"
@@ -580,14 +646,21 @@ run_mysql_%s %s "SHOW DATABASES;" | grep test_repl
 		name,
 		envKeyPrefix,
 		slaveContainerName,
-		envKeyPrefix,
-		slaveContainerName,
+		replicaStatusCommand,
+		replicaStatusFields,
 		name,
 		envKeyPrefix,
 		masterContainerName,
 		envKeyPrefix,
 		slaveContainerName,
 	)
+}
+
+func mysqlReplicaStatusCommand(version string) (string, string) {
+	if version == "v5.7" {
+		return "SHOW SLAVE STATUS\\G", "Slave_IO_Running:|Slave_SQL_Running:|Seconds_Behind_Master:|Last_IO_Error:|Last_SQL_Error:"
+	}
+	return "SHOW REPLICA STATUS\\G", "Replica_IO_Running:|Replica_SQL_Running:|Seconds_Behind_Source:|Last_IO_Error:|Last_SQL_Error:"
 }
 
 func masterSlaveReadme(name, version, masterImage, slaveImage string, masterPort, slavePort int) string {

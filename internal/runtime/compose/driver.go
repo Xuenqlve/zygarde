@@ -153,6 +153,11 @@ func (d Driver) Apply(ctx context.Context, plan runtime.ApplyPlan) (*runtime.Ope
 	return d.executor.Apply(ctx, plan)
 }
 
+// Create runs the compose create plan without starting containers.
+func (d Driver) Create(ctx context.Context, plan runtime.ApplyPlan) (*runtime.OperationResult, error) {
+	return d.executor.Create(ctx, plan)
+}
+
 // PlanLifecycle aggregates one compose lifecycle plan from persisted environment metadata.
 func (d Driver) PlanLifecycle(_ context.Context, req runtime.BuildLifecycleRequest) (*runtime.LifecyclePlan, error) {
 	env := req.Environment

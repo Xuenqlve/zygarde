@@ -43,7 +43,7 @@ AI 开发中间件时，应优先把中间件私有逻辑收敛到 `pkg/*`，不
 3. 确定 `pkg/<middleware>/<template>.go` 的单入口落点
 4. 在 `Normalize / Configure / Validate / BuildRuntimeContexts` 中完成实现
 5. 同步补充 `docs/<middleware>.md`
-6. 同步评估并补充 `test/create/<middleware>_test.go`
+6. 同步评估并补充 `test/command/<middleware>_test.go`
 
 ## 职责边界
 
@@ -51,6 +51,7 @@ AI 开发中间件时，应优先把中间件私有逻辑收敛到 `pkg/*`，不
 
 - 注册 middleware/template/runtime 实现
 - 提供默认 template
+- 暴露模板元数据，例如支持版本、默认模板标记、帮助文档路径、模板说明
 - 补齐用户配置默认值
 - 校验 middleware 自身参数
 - 生成 `EnvironmentContext`
@@ -63,6 +64,12 @@ AI 开发中间件时，应优先把中间件私有逻辑收敛到 `pkg/*`，不
 - environment 生命周期编排
 - runtime/deployment 执行
 - 全局状态持久化
+
+需要额外强调：
+
+- 如果平台要对外提供 `template list / template show` 这类模板管理能力，模板事实来源仍然必须在 `pkg`
+- `internal/*` 只负责读取和展示，不应再定义一份独立的模板白名单或版本矩阵
+- 可以使用集中式的 `pkg/catalog` 一类聚合注册表，但本质上仍属于 `pkg` 侧能力
 
 ## 目录与实现规则
 
@@ -77,6 +84,7 @@ AI 开发中间件时，应优先把中间件私有逻辑收敛到 `pkg/*`，不
 - 用户显式配置的值应优先校验，不要静默改写
 - 用户未配置的值，才允许通过默认值策略或工具自动补齐
 - 对未支持的版本，应直接报错，不允许静默回退
+- 已知版本的命令、SQL 或检查差异，应直接按 `version` 选择，不要依赖运行时试错 fallback；细则见 `version-compatibility-guidelines.md`
 
 ## Compose 交付三件套
 
@@ -84,9 +92,11 @@ AI 开发中间件时，应优先把中间件私有逻辑收敛到 `pkg/*`，不
 
 1. `pkg/<middleware>/<template>.go`
 2. `docs/<middleware>.md`
-3. `test/create/<middleware>_test.go`
+3. `test/command/<middleware>_test.go`
 
 只改代码、不补文档或测试，交付不完整。
+
+如果该交付会影响平台侧可发现性，还应同步更新 `pkg` 中的模板元数据注册内容，使 `template list / template show` 能反映真实能力。
 
 ## 文档规则
 
@@ -116,7 +126,7 @@ AI 开发中间件时，应优先把中间件私有逻辑收敛到 `pkg/*`，不
 
 通用测试骨架应优先沉淀到：
 
-- `test/create/base.go`
+- `test/command/base.go`
 
 单个中间件测试文件只保留：
 
@@ -124,16 +134,25 @@ AI 开发中间件时，应优先把中间件私有逻辑收敛到 `pkg/*`，不
 - 场景参数
 - 中间件私有断言
 
+## 测试目录规则
+
+- 新增测试统一优先放在 `test/` 目录下管理
+- 单元测试按主题拆分到 `test/<domain>/`
+- 用户命令主链路与 Compose 生命周期功能测试统一放在 `test/command/`
+- 不要继续在 `internal/*` 或 `pkg/*` 下新增零散测试文件，除非有明确理由且已说明
+
 ## 当前项目特有约束
 
 - 当前项目按“一次执行完成即退出”的单任务 CLI 工具来设计
 - 端口分发、编号分配等一次性辅助能力可以放在 `internal/tool/*` 中实现为单任务级全局工具
 - Compose 命令执行当前已支持通过配置切换容器引擎，例如 `docker` / `podman`
 - 当前目录环境标记用于支撑 `status / doctor / down` 的用户体验，不要求用户显式记忆 `EnvironmentID`
+- 模板管理命令是平台入口，但模板元数据维护责任在 `pkg`，不是在 `internal`
 
 ## 禁止事项
 
 - 不要脱离 `docker/<middleware>/<scenario>_<version>/` 凭经验重写 Compose 实现
 - 不要把中间件特有逻辑散落到 `internal/*`
+- 不要把模板可用性清单、版本矩阵、默认模板映射重新硬编码到 `internal/*`
 - 不要为不同版本复制多个近似 `pkg` 实现文件
 - 不要只补代码，不补文档和测试
