@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -21,6 +22,10 @@ type BlueprintFile struct {
 type BlueprintStore interface {
 	LoadBlueprint(path string) (model.Blueprint, error)
 	ListBlueprints(root string) ([]BlueprintFile, error)
+	ResolveBlueprint(ref string, root string) (BlueprintFile, error)
+	SaveBlueprint(path string, blueprint model.Blueprint) error
+	UpdateBlueprint(path string, blueprint model.Blueprint) error
+	DeleteBlueprint(path string) error
 }
 
 // FileBlueprintStore loads blueprint definitions from local files.
@@ -102,6 +107,112 @@ func (s FileBlueprintStore) ListBlueprints(root string) ([]BlueprintFile, error)
 	return items, nil
 }
 
+// ResolveBlueprint resolves one blueprint by file path or blueprint name.
+func (s FileBlueprintStore) ResolveBlueprint(ref string, root string) (BlueprintFile, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return BlueprintFile{}, fmt.Errorf("blueprint reference is required")
+	}
+
+	if info, err := os.Stat(ref); err == nil {
+		if info.IsDir() {
+			return BlueprintFile{}, fmt.Errorf("blueprint path is a directory: %s", ref)
+		}
+		blueprint, loadErr := s.LoadBlueprint(ref)
+		if loadErr != nil {
+			return BlueprintFile{}, loadErr
+		}
+		return BlueprintFile{
+			Path:      filepath.Clean(ref),
+			Blueprint: blueprint,
+		}, nil
+	} else if !os.IsNotExist(err) {
+		return BlueprintFile{}, err
+	}
+
+	if looksLikeBlueprintPath(ref) {
+		return BlueprintFile{}, fmt.Errorf("blueprint file not found: %s", ref)
+	}
+
+	items, err := s.ListBlueprints(root)
+	if err != nil {
+		return BlueprintFile{}, err
+	}
+
+	matches := make([]BlueprintFile, 0, 1)
+	for _, item := range items {
+		if item.Blueprint.Name == ref {
+			matches = append(matches, item)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return BlueprintFile{}, fmt.Errorf("blueprint not found by name: %s", ref)
+	case 1:
+		return matches[0], nil
+	default:
+		paths := make([]string, 0, len(matches))
+		for _, item := range matches {
+			paths = append(paths, item.Path)
+		}
+		return BlueprintFile{}, fmt.Errorf("blueprint name %s is ambiguous: %s", ref, strings.Join(paths, ", "))
+	}
+}
+
+// SaveBlueprint writes one blueprint YAML file.
+func (FileBlueprintStore) SaveBlueprint(path string, blueprint model.Blueprint) error {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "" {
+		return fmt.Errorf("blueprint path is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("blueprint file already exists: %s", path)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	data, err := yaml.Marshal(&blueprint)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// UpdateBlueprint rewrites one existing blueprint YAML file.
+func (FileBlueprintStore) UpdateBlueprint(path string, blueprint model.Blueprint) error {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "" {
+		return fmt.Errorf("blueprint path is required")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("blueprint path is a directory: %s", path)
+	}
+	data, err := yaml.Marshal(&blueprint)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// DeleteBlueprint removes one blueprint file.
+func (FileBlueprintStore) DeleteBlueprint(path string) error {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "" {
+		return fmt.Errorf("blueprint path is required")
+	}
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	return nil
+}
+
 func isBlueprintCandidate(path string) bool {
 	base := strings.ToLower(filepath.Base(path))
 	switch base {
@@ -109,4 +220,11 @@ func isBlueprintCandidate(path string) bool {
 		return true
 	}
 	return strings.HasSuffix(base, ".blueprint.yaml") || strings.HasSuffix(base, ".blueprint.yml")
+}
+
+func looksLikeBlueprintPath(ref string) bool {
+	base := strings.ToLower(filepath.Base(ref))
+	return strings.Contains(ref, string(filepath.Separator)) ||
+		strings.HasSuffix(base, ".yaml") ||
+		strings.HasSuffix(base, ".yml")
 }

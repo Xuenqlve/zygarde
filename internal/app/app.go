@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	_ "github.com/xuenqlve/zygarde/pkg/register"
 
@@ -59,9 +60,13 @@ func (a *App) Create(ctx context.Context, blueprintFile string, envType runtime.
 	if envType == "" {
 		envType = a.cfg.DefaultEnvironmentType
 	}
+	resolvedPath, err := a.resolveBlueprintPath(ctx, blueprintFile)
+	if err != nil {
+		return nil, err
+	}
 
 	result, err := a.coordinator.Create(ctx, coordinator.CreateRequest{
-		BlueprintFile:   blueprintFile,
+		BlueprintFile:   resolvedPath,
 		EnvironmentType: envType,
 	})
 	if err != nil {
@@ -82,9 +87,13 @@ func (a *App) Up(ctx context.Context, blueprintFile string, envType runtime.Envi
 	if envType == "" {
 		envType = a.cfg.DefaultEnvironmentType
 	}
+	resolvedPath, err := a.resolveBlueprintPath(ctx, blueprintFile)
+	if err != nil {
+		return nil, err
+	}
 
 	result, err := a.coordinator.Up(ctx, coordinator.UpRequest{
-		BlueprintFile:   blueprintFile,
+		BlueprintFile:   resolvedPath,
 		EnvironmentType: envType,
 	})
 	if err != nil {
@@ -110,6 +119,31 @@ func (a *App) ListBlueprints(ctx context.Context, root string) (*coordinator.Blu
 	return a.coordinator.ListBlueprints(ctx, root)
 }
 
+// CreateBlueprint creates a new local blueprint file skeleton.
+func (a *App) CreateBlueprint(ctx context.Context, req coordinator.BlueprintCreateRequest) (*coordinator.BlueprintCreateResult, error) {
+	return a.coordinator.CreateBlueprint(ctx, req)
+}
+
+// DeleteBlueprint deletes one local blueprint file by path or name.
+func (a *App) DeleteBlueprint(ctx context.Context, ref string, root string) (*coordinator.BlueprintDeleteResult, error) {
+	return a.coordinator.DeleteBlueprint(ctx, ref, root)
+}
+
+// UpdateBlueprint updates one local blueprint file by path or name.
+func (a *App) UpdateBlueprint(ctx context.Context, req coordinator.BlueprintUpdateRequest) (*coordinator.BlueprintUpdateResult, error) {
+	return a.coordinator.UpdateBlueprint(ctx, req)
+}
+
+// CopyBlueprint copies one local blueprint file by path or name.
+func (a *App) CopyBlueprint(ctx context.Context, req coordinator.BlueprintCopyRequest) (*coordinator.BlueprintCopyResult, error) {
+	return a.coordinator.CopyBlueprint(ctx, req)
+}
+
+// ResolveBlueprint returns one blueprint file resolved by path or name.
+func (a *App) ResolveBlueprint(ctx context.Context, ref string) (string, error) {
+	return a.resolveBlueprintPath(ctx, ref)
+}
+
 // ListTemplates returns the built-in middleware template catalog.
 func (a *App) ListTemplates(ctx context.Context, envType runtime.EnvironmentType) (*coordinator.TemplateListResult, error) {
 	if envType == "" {
@@ -131,7 +165,11 @@ func (a *App) ShowBlueprint(ctx context.Context, blueprintFile string, envType r
 	if envType == "" {
 		envType = a.cfg.DefaultEnvironmentType
 	}
-	return a.coordinator.ShowBlueprint(ctx, blueprintFile, envType)
+	resolvedPath, err := a.resolveBlueprintPath(ctx, blueprintFile)
+	if err != nil {
+		return nil, err
+	}
+	return a.coordinator.ShowBlueprint(ctx, resolvedPath, envType)
 }
 
 // ValidateBlueprint validates one blueprint for the target runtime.
@@ -139,7 +177,11 @@ func (a *App) ValidateBlueprint(ctx context.Context, blueprintFile string, envTy
 	if envType == "" {
 		envType = a.cfg.DefaultEnvironmentType
 	}
-	return a.coordinator.ValidateBlueprint(ctx, blueprintFile, envType)
+	resolvedPath, err := a.resolveBlueprintPath(ctx, blueprintFile)
+	if err != nil {
+		return nil, err
+	}
+	return a.coordinator.ValidateBlueprint(ctx, resolvedPath, envType)
 }
 
 // Status queries one created environment by id.
@@ -211,4 +253,16 @@ func (a *App) resolveEnvironmentID(environmentID string) (string, error) {
 		return "", fmt.Errorf("resolve current environment: %w", err)
 	}
 	return current.EnvironmentID, nil
+}
+
+func (a *App) resolveBlueprintPath(ctx context.Context, ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return "", fmt.Errorf("blueprint reference is required")
+	}
+	resolved, err := a.coordinator.ResolveBlueprint(ctx, ref, ".")
+	if err != nil {
+		return "", err
+	}
+	return resolved.Path, nil
 }

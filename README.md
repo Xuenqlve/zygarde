@@ -6,7 +6,7 @@
 
 ## 核心能力
 
-- Blueprint 管理：支持本地 blueprint 的 `list / show / validate`
+- Blueprint 管理：支持本地 blueprint 的 `create / copy / list / show / validate / edit / update / delete`
 - 模板管理：支持内置 middleware template 的 `list / show`
 - 环境生命周期：支持 `create / up / list / status / doctor / start / stop / down`
 - 中间件编排：已覆盖 12 个中间件、26 个 Compose 模板
@@ -126,11 +126,28 @@ zygarde blueprint list
 zygarde blueprint list --dir ./examples
 ```
 
+### 创建 blueprint
+
+```bash
+zygarde blueprint create demo-stack
+zygarde blueprint create demo-stack --dir ./examples --middleware mysql --template single --version v8.0
+```
+
+默认会生成 `<name>.blueprint.yaml`。如果传了 `--file`，则写入指定路径。
+
+### 复制 blueprint
+
+```bash
+zygarde blueprint copy demo-stack --name demo-stack-copy
+zygarde blueprint copy ./examples/demo.blueprint.yaml --name demo-stack-dev --project-name demo-stack-dev
+```
+
 ### 查看 blueprint 摘要
 
 ```bash
 zygarde blueprint show
 zygarde blueprint show -f ./examples/demo/zygarde.yaml
+zygarde blueprint show demo-stack
 ```
 
 输出会展示：
@@ -144,6 +161,7 @@ zygarde blueprint show -f ./examples/demo/zygarde.yaml
 zygarde blueprint validate
 zygarde blueprint validate -f ./examples/demo/zygarde.yaml
 zygarde blueprint validate -f ./examples/demo/zygarde.yaml --env-type compose
+zygarde blueprint validate demo-stack
 ```
 
 当前 `validate` 会校验：
@@ -151,6 +169,40 @@ zygarde blueprint validate -f ./examples/demo/zygarde.yaml --env-type compose
 - blueprint 基础结构合法
 - service 默认值可归一化
 - 引用的 `middleware + template + runtime` 组合已注册
+
+### 更新 blueprint
+
+```bash
+zygarde blueprint update demo-stack --description "new description"
+zygarde blueprint update demo-stack --project-name demo-stack-dev --name demo-stack-v2
+```
+
+当前 `update` 为结构化更新模式，支持修改：
+- blueprint `name`
+- blueprint `description`
+- `runtime.project-name`
+- 新增 service：`--add-service`
+- 删除 service：`--remove-service`
+- 更新指定 service：`--service` 搭配 `--middleware`、`--template`、重复 `--set key=value`
+
+### 编辑 blueprint
+
+```bash
+export EDITOR=vim
+zygarde blueprint edit demo-stack
+zygarde blueprint edit ./examples/demo.blueprint.yaml
+```
+
+`edit` 只负责解析 blueprint 并调用 `$VISUAL` 或 `$EDITOR` 打开文件，不承担结构化修改逻辑；可脚本化修改仍建议优先使用 `blueprint update`。
+
+### 删除 blueprint
+
+```bash
+zygarde blueprint delete demo-stack
+zygarde blueprint delete ./examples/demo-stack.blueprint.yaml
+```
+
+`create / up / blueprint show / blueprint validate / blueprint delete` 现在都支持优先按文件路径解析；当找不到同名文件时，会退化为在当前目录下按 blueprint `name` 搜索。
 
 ## 模板管理命令
 
@@ -310,10 +362,11 @@ go test ./test/command -count=1
 - Compose 运行时
 - 12 个中间件、26 个模板
 - Blueprint 管理的一期命令：`list / show / validate`
+- Blueprint 管理已补 `create / delete` 和按名称解析
 - 环境生命周期主命令
 
 后续仍待推进：
 
-- Blueprint / Template 的完整 CRUD
+- Blueprint `edit/update` 与 Template 管理增强
 - 更结构化的 `doctor` 输出
 - 更多 runtime 扩展能力，例如 K8s

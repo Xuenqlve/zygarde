@@ -217,6 +217,25 @@ func (f fakeBlueprintStore) ListBlueprints(_ string) ([]store.BlueprintFile, err
 	}}, nil
 }
 
+func (f fakeBlueprintStore) ResolveBlueprint(ref string, _ string) (store.BlueprintFile, error) {
+	return store.BlueprintFile{
+		Path:      ref,
+		Blueprint: f.blueprint,
+	}, nil
+}
+
+func (fakeBlueprintStore) SaveBlueprint(string, model.Blueprint) error {
+	return nil
+}
+
+func (fakeBlueprintStore) UpdateBlueprint(string, model.Blueprint) error {
+	return nil
+}
+
+func (fakeBlueprintStore) DeleteBlueprint(string) error {
+	return nil
+}
+
 type memoryEnvironmentStore struct {
 	environments           map[string]model.Environment
 	artifacts              map[string]runtime.RuntimeArtifact

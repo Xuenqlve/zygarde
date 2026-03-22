@@ -2,10 +2,13 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -75,6 +78,16 @@ func runBlueprint(ctx context.Context, args []string, stdout io.Writer) error {
 	switch args[0] {
 	case "list":
 		return runBlueprintList(ctx, args[1:], stdout)
+	case "create":
+		return runBlueprintCreate(ctx, args[1:], stdout)
+	case "copy":
+		return runBlueprintCopy(ctx, args[1:], stdout)
+	case "edit":
+		return runBlueprintEdit(ctx, args[1:], stdout)
+	case "update":
+		return runBlueprintUpdate(ctx, args[1:], stdout)
+	case "delete":
+		return runBlueprintDelete(ctx, args[1:], stdout)
 	case "show":
 		return runBlueprintShow(ctx, args[1:], stdout)
 	case "validate":
@@ -116,8 +129,15 @@ func runBlueprintAction(ctx context.Context, name string, args []string, stdout 
 	fs.StringVar(&blueprintFile, "file", "", "path to blueprint.yaml")
 	fs.StringVar(&envType, "env-type", string(runtime.EnvironmentTypeCompose), "runtime environment type")
 
-	if err := fs.Parse(args); err != nil {
+	ref, remainingArgs := splitLeadingPositional(args)
+	if err := fs.Parse(remainingArgs); err != nil {
 		return err
+	}
+	if blueprintFile == "" && ref != "" {
+		blueprintFile = ref
+	}
+	if blueprintFile == "" && fs.NArg() > 0 {
+		blueprintFile = fs.Arg(0)
 	}
 	if blueprintFile == "" {
 		var err error
@@ -163,6 +183,240 @@ func runBlueprintList(ctx context.Context, args []string, stdout io.Writer) erro
 	return writeBlueprintListResult(stdout, result)
 }
 
+func runBlueprintCreate(ctx context.Context, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("blueprint create", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	var (
+		root        string
+		path        string
+		description string
+		projectName string
+		middleware  string
+		templateRef string
+		version     string
+	)
+	fs.StringVar(&root, "dir", ".", "directory to write the blueprint file")
+	fs.StringVar(&path, "file", "", "path to the blueprint file")
+	fs.StringVar(&path, "f", "", "path to the blueprint file")
+	fs.StringVar(&description, "description", "", "blueprint description")
+	fs.StringVar(&projectName, "project-name", "", "runtime project name")
+	fs.StringVar(&middleware, "middleware", "", "initial middleware")
+	fs.StringVar(&templateRef, "template", "", "initial template")
+	fs.StringVar(&version, "version", "", "initial middleware version")
+	name, remainingArgs := splitLeadingPositional(args)
+	if err := fs.Parse(remainingArgs); err != nil {
+		return err
+	}
+	if name == "" && fs.NArg() > 0 {
+		name = fs.Arg(0)
+	}
+	if name == "" {
+		return fmt.Errorf("blueprint create requires <name>")
+	}
+	if middleware == "" && (templateRef != "" || version != "") {
+		return fmt.Errorf("blueprint middleware is required when template or version is provided")
+	}
+
+	application, err := app.New()
+	if err != nil {
+		return err
+	}
+	result, err := application.CreateBlueprint(ctx, coordinator.BlueprintCreateRequest{
+		Name:        name,
+		Description: description,
+		ProjectName: projectName,
+		Root:        root,
+		Path:        path,
+		Middleware:  middleware,
+		Template:    templateRef,
+		Version:     version,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, result.Message)
+	return err
+}
+
+func runBlueprintCopy(ctx context.Context, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("blueprint copy", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	var (
+		root        string
+		path        string
+		name        string
+		projectName string
+	)
+	fs.StringVar(&root, "dir", ".", "directory to resolve source names and write the copied blueprint")
+	fs.StringVar(&path, "file", "", "path to the copied blueprint file")
+	fs.StringVar(&path, "f", "", "path to the copied blueprint file")
+	fs.StringVar(&name, "name", "", "target blueprint name")
+	fs.StringVar(&projectName, "project-name", "", "target runtime project name")
+
+	ref, remainingArgs := splitLeadingPositional(args)
+	if err := fs.Parse(remainingArgs); err != nil {
+		return err
+	}
+	if ref == "" && fs.NArg() > 0 {
+		ref = fs.Arg(0)
+	}
+	if ref == "" {
+		return fmt.Errorf("blueprint copy requires <name-or-path>")
+	}
+	if name == "" {
+		return fmt.Errorf("blueprint copy requires --name")
+	}
+
+	application, err := app.New()
+	if err != nil {
+		return err
+	}
+	result, err := application.CopyBlueprint(ctx, coordinator.BlueprintCopyRequest{
+		Reference:   ref,
+		Root:        root,
+		Name:        name,
+		Path:        path,
+		ProjectName: projectName,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, result.Message)
+	return err
+}
+
+func runBlueprintEdit(ctx context.Context, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("blueprint edit", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	ref, remainingArgs := splitLeadingPositional(args)
+	if err := fs.Parse(remainingArgs); err != nil {
+		return err
+	}
+	if ref == "" && fs.NArg() > 0 {
+		ref = fs.Arg(0)
+	}
+	if ref == "" {
+		var err error
+		ref, err = resolveBlueprintFile()
+		if err != nil {
+			return err
+		}
+	}
+
+	application, err := app.New()
+	if err != nil {
+		return err
+	}
+	path, err := application.ResolveBlueprint(ctx, ref)
+	if err != nil {
+		return err
+	}
+	if err := launchEditor(ctx, path); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "opened blueprint %s in editor\n", path)
+	return err
+}
+
+func runBlueprintDelete(ctx context.Context, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("blueprint delete", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	var root string
+	fs.StringVar(&root, "dir", ".", "directory to resolve blueprint names")
+	ref, remainingArgs := splitLeadingPositional(args)
+	if err := fs.Parse(remainingArgs); err != nil {
+		return err
+	}
+	if ref == "" && fs.NArg() > 0 {
+		ref = fs.Arg(0)
+	}
+	if ref == "" {
+		return fmt.Errorf("blueprint delete requires <name-or-path>")
+	}
+
+	application, err := app.New()
+	if err != nil {
+		return err
+	}
+	result, err := application.DeleteBlueprint(ctx, ref, root)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, result.Message)
+	return err
+}
+
+func runBlueprintUpdate(ctx context.Context, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("blueprint update", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	var (
+		root        string
+		name        string
+		description string
+		projectName string
+		serviceName string
+		addService  string
+		removeSvc   string
+		middleware  string
+		templateRef string
+	)
+	fs.StringVar(&root, "dir", ".", "directory to resolve blueprint names")
+	fs.StringVar(&name, "name", "", "new blueprint name")
+	fs.StringVar(&description, "description", "", "new blueprint description")
+	fs.StringVar(&projectName, "project-name", "", "new runtime project name")
+	fs.StringVar(&serviceName, "service", "", "target service name to update")
+	fs.StringVar(&addService, "add-service", "", "new service name to add")
+	fs.StringVar(&removeSvc, "remove-service", "", "existing service name to remove")
+	fs.StringVar(&middleware, "middleware", "", "service middleware for add/update")
+	fs.StringVar(&templateRef, "template", "", "service template for add/update")
+	var setValues stringMapFlag
+	fs.Var(&setValues, "set", "set one service value key=value; may be repeated")
+
+	ref, remainingArgs := splitLeadingPositional(args)
+	if err := fs.Parse(remainingArgs); err != nil {
+		return err
+	}
+	if ref == "" && fs.NArg() > 0 {
+		ref = fs.Arg(0)
+	}
+	if ref == "" {
+		return fmt.Errorf("blueprint update requires <name-or-path>")
+	}
+	if name == "" && description == "" && projectName == "" &&
+		serviceName == "" && addService == "" && removeSvc == "" &&
+		middleware == "" && templateRef == "" && len(setValues) == 0 {
+		return fmt.Errorf("blueprint update requires at least one metadata or service change flag")
+	}
+
+	application, err := app.New()
+	if err != nil {
+		return err
+	}
+	result, err := application.UpdateBlueprint(ctx, coordinator.BlueprintUpdateRequest{
+		Reference:         ref,
+		Root:              root,
+		Name:              name,
+		Description:       description,
+		ProjectName:       projectName,
+		ServiceName:       serviceName,
+		AddServiceName:    addService,
+		RemoveServiceName: removeSvc,
+		Middleware:        middleware,
+		Template:          templateRef,
+		SetValues:         map[string]string(setValues),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, result.Message)
+	return err
+}
+
 func runBlueprintShow(ctx context.Context, args []string, stdout io.Writer) error {
 	return runBlueprintInspect(ctx, "blueprint show", args, stdout, func(application *app.App, blueprintFile string, envType runtime.EnvironmentType) error {
 		result, err := application.ShowBlueprint(ctx, blueprintFile, envType)
@@ -195,10 +449,14 @@ func runBlueprintInspect(ctx context.Context, name string, args []string, stdout
 	fs.StringVar(&blueprintFile, "f", "", "path to blueprint.yaml")
 	fs.StringVar(&blueprintFile, "file", "", "path to blueprint.yaml")
 	fs.StringVar(&envType, "env-type", string(runtime.EnvironmentTypeCompose), "runtime environment type")
-	if err := fs.Parse(args); err != nil {
+	ref, remainingArgs := splitLeadingPositional(args)
+	if err := fs.Parse(remainingArgs); err != nil {
 		return err
 	}
 
+	if blueprintFile == "" && ref != "" {
+		blueprintFile = ref
+	}
 	if blueprintFile == "" && fs.NArg() > 0 {
 		blueprintFile = fs.Arg(0)
 	}
@@ -584,4 +842,62 @@ func fallbackString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func launchEditor(ctx context.Context, path string) error {
+	editor := strings.TrimSpace(os.Getenv("VISUAL"))
+	if editor == "" {
+		editor = strings.TrimSpace(os.Getenv("EDITOR"))
+	}
+	if editor == "" {
+		return fmt.Errorf("blueprint edit requires VISUAL or EDITOR to be set")
+	}
+	cmd := exec.CommandContext(ctx, editor, path)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return fmt.Errorf("editor command failed: %w", err)
+		}
+		return fmt.Errorf("start editor command: %w", err)
+	}
+	return nil
+}
+
+func splitLeadingPositional(args []string) (string, []string) {
+	if len(args) == 0 {
+		return "", args
+	}
+	if strings.HasPrefix(args[0], "-") {
+		return "", args
+	}
+	return args[0], args[1:]
+}
+
+type stringMapFlag map[string]string
+
+func (f *stringMapFlag) String() string {
+	if f == nil || len(*f) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(*f))
+	for key, value := range *f {
+		parts = append(parts, key+"="+value)
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ",")
+}
+
+func (f *stringMapFlag) Set(value string) error {
+	parts := strings.SplitN(value, "=", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
+		return fmt.Errorf("set flag must be key=value")
+	}
+	if *f == nil {
+		*f = make(map[string]string)
+	}
+	(*f)[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+	return nil
 }

@@ -102,6 +102,26 @@ Zygarde 项目的统一开发 skill。
 - 模板管理默认展示的内容应至少包含：`middleware`、`template`、`runtime`、支持版本、默认模板标记、帮助文档路径、简要说明。
 - 新增或变更 `pkg/<middleware>/<template>` 能力时，如果影响模板可发现性，必须同步更新模板元数据。
 
+关于 Blueprint 管理，当前建议遵守：
+- Blueprint 管理的目标，是把 blueprint 从“手工维护的 YAML 输入文件”提升为“平台内可发现、可校验、可派生、可维护的本地资源”。
+- Blueprint 管理能力属于平台命令，应落在 `internal/*` 主链路中实现，不要把文件写入、删除、复制、名称解析逻辑散落在 CLI 层临时拼接。
+- Blueprint 的事实来源仍然是本地 YAML 文件；当前阶段不引入数据库、远程注册中心或额外索引服务。
+- Blueprint 管理应优先支持“路径 + 名称”双引用方式：先按文件路径解析，找不到时再按 blueprint `name` 在约定目录中搜索。
+- Blueprint 管理当前推荐能力顺序为：`create -> copy -> list/show/validate -> update -> delete -> edit`。
+- `create` 产物应是标准 blueprint YAML 骨架，而不是 runtime bundle；runtime 产物仍由 `zygarde create/up` 主链路生成。
+- `copy` 优先作为 blueprint 复用能力，适合从现有环境派生新环境；其优先级高于交互式 `edit`。
+- `update` 优先做结构化更新，而不是编辑器式自由编辑。当前优先支持：
+  - blueprint 级字段：`name`、`description`、`runtime.project-name`
+  - service 级字段：新增 service、删除 service、更新指定 service 的 `middleware` / `template` / `values`
+- `edit` 如果实现，应只是“解析 blueprint 后调用 `$EDITOR` 打开文件”的便捷入口，不承担结构化修改逻辑；机器可控的修改仍应走 `update`。
+- Blueprint 文件读写、删除、复制、名称解析等存储动作，应统一收敛到 `internal/store` 抽象，不要让 `coordinator` 或 `cli` 直接操作文件系统细节。
+- Blueprint 管理新增命令时，应同步补 `test/command/` 下的命令级测试，至少覆盖：
+  - 路径解析
+  - 名称解析
+  - 文件创建/覆盖/删除结果
+  - 关键 YAML 字段是否按预期落盘
+- 若 blueprint 管理能力影响 README 中的命令集合、默认文件命名或引用方式，必须同步更新 `README.md` 与 `TODO.md`。
+
 关于一次性工具与任务级全局状态，当前建议遵守：
 - 当前项目可按“一次执行完成即退出”的单任务 CLI 工具来设计，不必默认按长生命周期服务建模。
 - 对端口分发、编号分配等一次性辅助能力，可以放在 `internal/tool/*` 中实现为“单任务级全局工具”。

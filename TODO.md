@@ -125,7 +125,7 @@
 - [x] 将 `start` 生命周期恢复路径补齐为稳定的真实集成测试
 - [ ] 补充更多基础单元测试和主链路集成测试
 - [ ] 继续收敛 `docker compose` 与 `podman compose` 的兼容性问题，并完善 Podman 独立 deployment 实现
-- [ ] 补充模板管理、蓝图管理的完整 CRUD
+- [ ] 补充模板管理的完整增强能力，并继续完善蓝图管理剩余 CRUD
 
 #### P2
 
@@ -165,17 +165,25 @@
 
 #### Blueprint 管理
 
-- [ ] 增加 `blueprint create`
-- [ ] 增加 `blueprint delete`
-- [ ] 增加 `blueprint edit/update`
-- [ ] 支持按 blueprint 名称执行，而不只按文件路径执行
+- [x] 增加 `blueprint create`
+- [x] 增加 `blueprint copy`
+- [x] 增加 `blueprint delete`
+- [x] 增加 `blueprint edit`
+- [x] 增加 `blueprint update`
+- [x] 支持按 blueprint 名称执行，而不只按文件路径执行
 
 #### Template 管理
 
-- [ ] 增加 `template validate`，校验模板元数据与实际 `pkg` 能力一致
-- [ ] 增加模板帮助文档关联检查，确保 `docs/<middleware>.md` 与模板元数据同步
-- [ ] 补充模板默认值/支持版本的展示增强
-- [ ] 评估是否需要 `template create/update/delete`，若不支持外部模板则明确只保留只读管理能力
+- [ ] 增加 `template validate` 命令入口
+- [ ] 校验模板元数据与 `internal/template` 实际注册能力一致，避免出现 catalog 与 pkg 注册漂移
+- [ ] 校验默认模板标记与 `GetDefaultMiddleware(...)` 的解析结果一致
+- [ ] 校验模板支持版本声明与 `pkg/<middleware>/<template>` 实际支持范围一致
+- [ ] 增加模板帮助文档关联检查，确保 `docs/<middleware>.md` 存在且与模板元数据同步
+- [ ] 增加模板说明字段完整性检查，避免空 description / docPath / runtimeType
+- [ ] 为 `template list/show` 补充默认值/支持版本展示增强
+- [ ] 评估是否增加 `template defaults/show-values` 一类只读能力，用于展示模板最小示例和值说明
+- [ ] 明确 template 管理当前只支持内置只读模板，不支持外部模板的 create/update/delete；若后续不支持，应在 README/帮助文案中写清楚
+- [ ] 为 `template validate` 与模板展示命令补 `test/command/` 命令测试和异常用例
 
 #### 生命周期与诊断
 
